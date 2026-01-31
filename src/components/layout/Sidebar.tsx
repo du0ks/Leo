@@ -41,7 +41,7 @@ export function Sidebar() {
         if (!user || !newNotebookTitle.trim()) return;
         try {
             await createNotebook.mutateAsync({
-                user_id: user.id,
+                user_id: user.uid,
                 title: newNotebookTitle.trim(),
             });
             setNewNotebookTitle('');
@@ -274,7 +274,7 @@ function NoteItem({ note }: { note: any }) {
         e.stopPropagation();
         if (confirm('Move note to trash?')) {
             await softDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
-            if (selectedNoteId === note.id) selectNote(null);
+            if (selectedNoteId === note.id) selectNote(null, null);
         }
     };
 
@@ -286,7 +286,7 @@ function NoteItem({ note }: { note: any }) {
                     ? "bg-app-primary/10 text-app-primary font-medium"
                     : "text-app-text/80 hover:bg-app-accent-bg hover:text-app-text"
             )}
-            onClick={() => selectNote(note.id)}
+            onClick={() => selectNote(note.id, note.notebook_id)}
         >
             <FileText size={14} className={clsx(
                 selectedNoteId === note.id ? "text-app-primary" : "text-app-muted group-hover:text-app-text"
@@ -324,8 +324,8 @@ function TrashSection() {
                 </div>
                 <Trash2 size={16} />
                 <span className="flex-1 text-sm font-medium">Trash</span>
-                {trashedNotes?.length > 0 && (
-                    <span className="text-xs bg-app-border px-1.5 rounded-full">{trashedNotes.length}</span>
+                {(trashedNotes?.length ?? 0) > 0 && (
+                    <span className="text-xs bg-app-border px-1.5 rounded-full">{trashedNotes?.length}</span>
                 )}
             </div>
 
@@ -343,7 +343,7 @@ function TrashSection() {
                                         ? "bg-red-500/10 text-red-500"
                                         : "text-app-text/70 hover:bg-app-accent-bg"
                                 )}
-                                onClick={() => selectNote(note.id)}
+                                onClick={() => selectNote(note.id, note.notebook_id, true)}
                             >
                                 <FileText size={14} className="text-app-muted" />
                                 <span className="flex-1 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>

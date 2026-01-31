@@ -8,8 +8,8 @@ import { useDebouncedCallback } from '../../hooks/useDebouncedCallback';
 import clsx from 'clsx';
 
 export function MainView() {
-    const { selectedNoteId, isTrashView } = useUIStore();
-    const { data: note, isLoading } = useNote(selectedNoteId);
+    const { selectedNoteId, selectedNotebookId, isTrashView } = useUIStore();
+    const { data: note, isLoading } = useNote(selectedNoteId, selectedNotebookId);
     const updateNote = useUpdateNote();
     const restoreNote = useRestoreNote();
     const permanentlyDeleteNote = usePermanentlyDeleteNote();
@@ -31,7 +31,7 @@ export function MainView() {
             if (!selectedNoteId || note?.deleted_at) return;
             setIsSaving(true);
             try {
-                await updateNote.mutateAsync({ id: selectedNoteId, content });
+                await updateNote.mutateAsync({ id: selectedNoteId, notebookId: selectedNotebookId!, content });
             } finally {
                 setIsSaving(false);
             }
@@ -44,7 +44,7 @@ export function MainView() {
             if (!selectedNoteId || note?.deleted_at) return;
             setIsSaving(true);
             try {
-                await updateNote.mutateAsync({ id: selectedNoteId, title: newTitle });
+                await updateNote.mutateAsync({ id: selectedNoteId, notebookId: selectedNotebookId!, title: newTitle });
             } finally {
                 setIsSaving(false);
             }
