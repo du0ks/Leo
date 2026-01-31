@@ -10,7 +10,8 @@ import { Sidebar } from './components/layout/Sidebar';
 import { MainView } from './components/layout/MainView';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { SettingsModal } from './components/settings/SettingsModal';
-import { LogOut, Menu, Loader2, Settings, Book } from 'lucide-react';
+import { LogOut, Menu, Loader2, Settings } from 'lucide-react';
+import clsx from 'clsx';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,16 +62,12 @@ function AppContent() {
         <div className="flex items-center gap-3">
           <button
             onClick={toggleSidebar}
-            className="app-header-vibrant-button lg:hidden"
+            className="app-header-vibrant-button"
+            title="Toggle Sidebar"
           >
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-app-primary/10 flex items-center justify-center backdrop-blur-sm">
-              <Book className="w-5 h-5 text-app-primary" />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight">Leo</h1>
-          </div>
+          <h1 className="text-xl font-bold tracking-tight">Leo</h1>
         </div>
 
         <div className="flex items-center gap-2">
@@ -91,20 +88,23 @@ function AppContent() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         {/* Sidebar */}
         <aside
-          className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-            } lg:translate-x-0 fixed lg:relative z-20 h-[calc(100vh-64px)] transition-transform duration-200 ease-in-out shadow-xl lg:shadow-none`}
+          className={clsx(
+            "fixed inset-y-0 left-0 lg:relative z-20 transition-all duration-300 ease-in-out bg-app-surface border-r border-app-border overflow-hidden",
+            sidebarOpen ? "w-64 translate-x-0" : "w-0 -translate-x-full lg:translate-x-0"
+          )}
         >
-          <Sidebar />
+          <div className="w-64 h-full">
+            <Sidebar />
+          </div>
         </aside>
 
         {/* Overlay for mobile */}
         {sidebarOpen && (
           <div
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-10 lg:hidden"
+            className="fixed inset-0 bg-black/20 backdrop-blur-[2px] z-10 lg:hidden"
             onClick={toggleSidebar}
           />
         )}
