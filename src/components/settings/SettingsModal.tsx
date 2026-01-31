@@ -1,7 +1,7 @@
 import { Modal, Switch, SimpleGrid, Text, Group, Stack, Divider, ActionIcon } from '@mantine/core';
 import { useUIStore, ThemeColor } from '../../stores/uiStore';
 import { Check, Moon, Sun } from 'lucide-react';
-import clsx from 'clsx'; import { ThemeToggle } from '../ui/ThemeToggle';
+import clsx from 'clsx';
 
 
 const THEME_COLORS: { name: ThemeColor; color: string }[] = [

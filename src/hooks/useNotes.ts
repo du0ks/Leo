@@ -2,8 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     collection,
     query,
-    where,
-    orderBy,
     getDocs,
     getDoc,
     doc,
@@ -243,7 +241,7 @@ export function usePermanentlyDeleteNote() {
             await deleteDoc(docRef);
             return { id, notebookId };
         },
-        onSuccess: (data) => {
+        onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
