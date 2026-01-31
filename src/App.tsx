@@ -10,7 +10,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { MainView } from './components/layout/MainView';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { SettingsModal } from './components/settings/SettingsModal';
-import { LogOut, Menu, Loader2, Settings } from 'lucide-react';
+import { LogOut, Menu, Loader2, Settings, Book } from 'lucide-react';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -57,28 +57,33 @@ function AppContent() {
   return (
     <div className="h-screen flex flex-col bg-app-bg text-app-text overflow-hidden transition-colors duration-300">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-app-border bg-app-surface/50 backdrop-blur-md z-30">
+      <header className="flex items-center justify-between px-4 py-2 app-header-vibrant shadow-sm z-30 transition-colors duration-300">
         <div className="flex items-center gap-3">
           <button
             onClick={toggleSidebar}
-            className="p-2 rounded-lg hover:bg-app-accent-bg transition-colors lg:hidden"
+            className="app-header-vibrant-button lg:hidden"
           >
-            <Menu className="w-5 h-5 text-app-muted" />
+            <Menu className="w-5 h-5" />
           </button>
-          <h1 className="text-xl font-bold tracking-tight">Leo</h1>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center backdrop-blur-sm">
+              <Book className="w-5 h-5 text-white dark:text-app-primary" />
+            </div>
+            <h1 className="text-xl font-bold tracking-tight">Leo</h1>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={() => setSettingsOpen(true)}
-            className="p-2 rounded-lg hover:bg-app-accent-bg transition-colors text-app-muted hover:text-app-primary"
+            className="app-header-vibrant-button group"
             title="Settings"
           >
-            <Settings className="w-5 h-5" />
+            <Settings className="w-5 h-5 transition-transform group-hover:rotate-45" />
           </button>
           <button
             onClick={signOut}
-            className="p-2 rounded-lg hover:bg-app-accent-bg transition-colors text-app-muted hover:text-red-500"
+            className="app-header-vibrant-button hover:!bg-red-500/20"
             title="Sign out"
           >
             <LogOut className="w-5 h-5" />
