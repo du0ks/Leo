@@ -46,7 +46,8 @@ function AppContent() {
     root.setAttribute('data-theme', themeColor);
   }, [darkMode, themeColor]);
 
-  if (loading || settingsLoading) {
+  // Only show initial auth loading spinner
+  if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-app-bg text-app-text">
         <Loader2 className="w-8 h-8 animate-spin text-app-primary" />
@@ -54,9 +55,18 @@ function AppContent() {
     );
   }
 
-  // Use isAuthenticated which checks both user existence AND email verification
+  // Show login form if not authenticated (don't check settingsLoading here to prevent remount)
   if (!isAuthenticated) {
     return <LoginForm />;
+  }
+
+  // Only show settings loading for authenticated users
+  if (settingsLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-app-bg text-app-text">
+        <Loader2 className="w-8 h-8 animate-spin text-app-primary" />
+      </div>
+    );
   }
 
   return (
