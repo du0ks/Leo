@@ -72,7 +72,7 @@ export function Sidebar() {
     };
 
     return (
-        <div className="w-80 h-full bg-app-surface border-r border-app-border flex flex-col">
+        <div className="w-64 h-full bg-app-surface border-r border-app-border flex flex-col">
             {/* Header */}
             <div className="p-4 border-b border-app-border flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-app-text">Library</h2>
