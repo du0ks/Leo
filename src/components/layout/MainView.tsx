@@ -83,9 +83,9 @@ export function MainView() {
     if (!selectedNoteId) {
         return (
             <div className="flex-1 flex items-center justify-center bg-app-bg">
-                <div className="text-center animate-fade-in">
-                    <div className="w-16 h-16 bg-app-accent-bg rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <Save className="w-8 h-8 text-app-primary opacity-50" />
+                <div className="text-center animate-fade-in group">
+                    <div className="w-24 h-24 mx-auto mb-6 transition-transform duration-500 group-hover:scale-110">
+                        <img src="/leo.png" alt="Leo" className="w-full h-full object-contain opacity-20 group-hover:opacity-40 transition-opacity" />
                     </div>
                     <p className="text-app-muted text-lg font-medium">
                         {isTrashView ? 'Select a trashed note to preview' : 'Select a note to start writing'}

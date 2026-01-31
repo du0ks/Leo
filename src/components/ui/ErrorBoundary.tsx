@@ -27,8 +27,11 @@ export class ErrorBoundary extends Component<Props, State> {
         if (this.state.hasError) {
             return (
                 <div className="h-screen flex flex-col items-center justify-center bg-app-bg p-6 text-center">
-                    <div className="w-16 h-16 bg-red-500/20 rounded-2xl flex items-center justify-center mb-6">
-                        <span className="text-2xl">⚠️</span>
+                    <div className="relative mb-6">
+                        <img src="/leo.png" alt="Leo" className="w-16 h-16 object-contain grayscale" />
+                        <div className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-xs shadow-lg animate-pulse">
+                            ⚠️
+                        </div>
                     </div>
                     <h2 className="text-2xl font-black text-app-text mb-2">Application Crash</h2>
                     <p className="text-app-muted mb-6 max-w-md mx-auto">
