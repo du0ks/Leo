@@ -7,9 +7,7 @@ import { useAuth } from './hooks/useAuth';
 import { useUIStore } from './stores/uiStore';
 import { LoginForm } from './components/auth/LoginForm';
 import { Sidebar } from './components/layout/Sidebar';
-import { NoteList } from './components/layout/NoteList';
 import { MainView } from './components/layout/MainView';
-// Removed: import { ThemeToggle } from './components/ui/ThemeToggle'; 
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { SettingsModal } from './components/settings/SettingsModal';
 import { LogOut, Menu, Loader2, Settings } from 'lucide-react';
@@ -93,7 +91,7 @@ function AppContent() {
         {/* Sidebar */}
         <aside
           className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-            } lg:translate-x-0 fixed lg:relative z-20 h-[calc(100vh-64px)] transition-transform duration-200 ease-in-out`}
+            } lg:translate-x-0 fixed lg:relative z-20 h-[calc(100vh-64px)] transition-transform duration-200 ease-in-out shadow-xl lg:shadow-none`}
         >
           <Sidebar />
         </aside>
@@ -106,8 +104,8 @@ function AppContent() {
           />
         )}
 
-        {/* Note List */}
-        <NoteList />
+        {/* Note List - REMOVED */}
+        {/* <NoteList /> */}
 
         {/* Main View */}
         <MainView />
