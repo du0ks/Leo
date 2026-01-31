@@ -1,209 +1,379 @@
 import { useState } from 'react';
-import { FolderPlus, Book, Trash2, Edit2, Check, X, Loader2, Trash } from 'lucide-react';
+import {
+    FolderPlus, Book, Trash2, Edit2, Check, X,
+    ChevronRight, ChevronDown, FileText, Plus,
+    RotateCcw, Loader2
+} from 'lucide-react';
 import {
     useNotebooks,
     useCreateNotebook,
     useSoftDeleteNotebook,
     useUpdateNotebook
 } from '../../hooks/useNotebooks';
+import {
+    useNotes,
+    useTrashedNotes,
+    useCreateNote,
+    useSoftDeleteNote,
+    useRestoreNote,
+    usePermanentlyDeleteNote
+} from '../../hooks/useNotes';
 import { useUIStore } from '../../stores/uiStore';
 import { useAuth } from '../../hooks/useAuth';
 import clsx from 'clsx';
+import { ActionIcon } from '@mantine/core';
 
 export function Sidebar() {
     const { user } = useAuth();
-    const { data: notebooks, isLoading } = useNotebooks();
+    const { data: notebooks, isLoading: notebooksLoading } = useNotebooks();
+
+    // Local state for creating/editing notebooks
+    const [isCreatingNotebook, setIsCreatingNotebook] = useState(false);
+    const [newNotebookTitle, setNewNotebookTitle] = useState('');
+    const [editingNotebookId, setEditingNotebookId] = useState<string | null>(null);
+    const [editNotebookTitle, setEditNotebookTitle] = useState('');
+
     const createNotebook = useCreateNotebook();
-    const softDeleteNotebook = useSoftDeleteNotebook();
     const updateNotebook = useUpdateNotebook();
+    const softDeleteNotebook = useSoftDeleteNotebook();
 
-    const { selectedNotebookId, selectNotebook, isTrashView, setTrashView } = useUIStore();
-
-    const [editingId, setEditingId] = useState<string | null>(null);
-    const [editTitle, setEditTitle] = useState('');
-    const [isCreating, setIsCreating] = useState(false);
-    const [newTitle, setNewTitle] = useState('');
-
-    const handleCreate = async () => {
-        if (!user || !newTitle.trim()) return;
-
+    const handleCreateNotebook = async () => {
+        if (!user || !newNotebookTitle.trim()) return;
         try {
-            const notebook = await createNotebook.mutateAsync({
+            await createNotebook.mutateAsync({
                 user_id: user.id,
-                title: newTitle.trim(),
+                title: newNotebookTitle.trim(),
             });
-            selectNotebook(notebook.id);
-            setNewTitle('');
-            setIsCreating(false);
+            setNewNotebookTitle('');
+            setIsCreatingNotebook(false);
         } catch (error) {
             console.error('Failed to create notebook:', error);
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (confirm('Move this notebook to trash? All its notes will also be trashed.')) {
-            await softDeleteNotebook.mutateAsync(id);
-            if (selectedNotebookId === id) {
-                selectNotebook(null);
-            }
-        }
-    };
-
-    const handleRename = async (id: string) => {
-        if (!editTitle.trim()) {
-            setEditingId(null);
+    const handleRenameNotebook = async (id: string) => {
+        if (!editNotebookTitle.trim()) {
+            setEditingNotebookId(null);
             return;
         }
-
-        await updateNotebook.mutateAsync({ id, title: editTitle.trim() });
-        setEditingId(null);
+        await updateNotebook.mutateAsync({ id, title: editNotebookTitle.trim() });
+        setEditingNotebookId(null);
     };
 
-    const startEditing = (id: string, title: string) => {
-        setEditingId(id);
-        setEditTitle(title);
+    const handleDeleteNotebook = async (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (confirm('Move this notebook to trash? All its notes will also be trashed.')) {
+            await softDeleteNotebook.mutateAsync(id);
+        }
     };
 
     return (
-        <div className="w-64 h-full bg-app-surface border-r border-app-border flex flex-col">
+        <div className="w-80 h-full bg-app-surface border-r border-app-border flex flex-col">
             {/* Header */}
-            <div className="p-4 border-b border-app-border">
-                <h2 className="text-lg font-semibold text-app-text">Notebooks</h2>
-            </div>
-
-            {/* Main Scrollable Area */}
-            <div className="flex-1 overflow-y-auto p-2 flex flex-col">
-                {/* Notebooks Section */}
-                <div className="flex-1">
-                    {isLoading ? (
-                        <div className="flex items-center justify-center py-8">
-                            <Loader2 className="w-6 h-6 animate-spin text-app-muted" />
-                        </div>
-                    ) : notebooks?.length === 0 ? (
-                        <p className="text-app-muted text-sm text-center py-8">
-                            No notebooks yet
-                        </p>
-                    ) : (
-                        <ul className="space-y-1">
-                            {notebooks?.map((notebook) => (
-                                <li key={notebook.id}>
-                                    {editingId === notebook.id ? (
-                                        <div className="flex items-center gap-1 p-2">
-                                            <input
-                                                type="text"
-                                                value={editTitle}
-                                                onChange={(e) => setEditTitle(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') handleRename(notebook.id);
-                                                    if (e.key === 'Escape') setEditingId(null);
-                                                }}
-                                                className="flex-1 px-2 py-1 rounded bg-app-bg border border-app-border text-app-text text-sm focus:outline-none focus:ring-2 focus:ring-app-primary"
-                                                autoFocus
-                                            />
-                                            <button
-                                                onClick={() => handleRename(notebook.id)}
-                                                className="p-1 hover:bg-app-accent-bg rounded"
-                                            >
-                                                <Check className="w-4 h-4 text-green-500" />
-                                            </button>
-                                            <button
-                                                onClick={() => setEditingId(null)}
-                                                className="p-1 hover:bg-app-accent-bg rounded"
-                                            >
-                                                <X className="w-4 h-4 text-red-500" />
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div
-                                            onClick={() => selectNotebook(notebook.id)}
-                                            className={clsx(
-                                                'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left group transition-all cursor-pointer',
-                                                selectedNotebookId === notebook.id
-                                                    ? 'bg-app-accent-bg text-app-primary font-medium'
-                                                    : 'text-app-text hover:bg-app-accent-bg'
-                                            )}
-                                        >
-                                            <Book className="w-4 h-4 shrink-0" />
-                                            <span className="flex-1 truncate text-sm">{notebook.title}</span>
-                                            <div className="hidden group-hover:flex items-center gap-1">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        startEditing(notebook.id, notebook.title);
-                                                    }}
-                                                    className="p-1 hover:bg-app-bg rounded"
-                                                >
-                                                    <Edit2 className="w-3 h-3" />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDelete(notebook.id);
-                                                    }}
-                                                    className="p-1 hover:bg-app-bg rounded text-red-500/80 hover:text-red-500"
-                                                >
-                                                    <Trash2 className="w-3 h-3" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-
-                    {/* New Notebook Input */}
-                    {isCreating && (
-                        <div className="mt-2 flex items-center gap-1 p-2">
-                            <input
-                                type="text"
-                                value={newTitle}
-                                onChange={(e) => setNewTitle(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleCreate();
-                                    if (e.key === 'Escape') setIsCreating(false);
-                                }}
-                                placeholder="Notebook name..."
-                                className="flex-1 px-2 py-1 rounded bg-app-bg border border-app-border text-app-text text-sm placeholder-app-muted focus:outline-none focus:ring-2 focus:ring-app-primary"
-                                autoFocus
-                            />
-                            <button onClick={handleCreate} className="p-1 hover:bg-app-accent-bg rounded">
-                                <Check className="w-4 h-4 text-green-500" />
-                            </button>
-                            <button onClick={() => setIsCreating(false)} className="p-1 hover:bg-app-accent-bg rounded">
-                                <X className="w-4 h-4 text-red-500" />
-                            </button>
-                        </div>
-                    )}
-                </div>
-
-                {/* Trash Section */}
-                <div className="mt-auto pt-4 border-t border-app-border/50">
-                    <button
-                        onClick={() => setTrashView(true)}
-                        className={clsx(
-                            'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all',
-                            isTrashView
-                                ? 'bg-red-500/10 text-red-500 font-medium'
-                                : 'text-app-text hover:bg-app-accent-bg'
-                        )}
-                    >
-                        <Trash className="w-4 h-4 shrink-0" />
-                        <span className="flex-1 truncate text-sm">Trash</span>
-                    </button>
-                </div>
-            </div>
-
-            {/* Footer - New Notebook Button */}
-            <div className="p-3 border-t border-app-border bg-app-surface/50">
-                <button
-                    onClick={() => setIsCreating(true)}
-                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-app-primary text-white text-sm font-medium hover:bg-app-primary-hover transition-colors shadow-sm"
+            <div className="p-4 border-b border-app-border flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-app-text">Library</h2>
+                <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    onClick={() => setIsCreatingNotebook(true)}
+                    title="New Notebook"
                 >
-                    <FolderPlus className="w-4 h-4" />
-                    New Notebook
-                </button>
+                    <FolderPlus size={18} />
+                </ActionIcon>
             </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
+                {notebooksLoading ? (
+                    <div className="flex justify-center py-4">
+                        <Loader2 className="animate-spin text-app-muted" size={20} />
+                    </div>
+                ) : (
+                    <div className="space-y-1">
+                        {/* Notebooks List */}
+                        {notebooks?.map((notebook) => (
+                            <NotebookItem
+                                key={notebook.id}
+                                notebook={notebook}
+                                isEditing={editingNotebookId === notebook.id}
+                                editTitle={editNotebookTitle}
+                                onEditChange={setEditNotebookTitle}
+                                onEditSubmit={() => handleRenameNotebook(notebook.id)}
+                                onEditCancel={() => setEditingNotebookId(null)}
+                                onStartEdit={() => {
+                                    setEditingNotebookId(notebook.id);
+                                    setEditNotebookTitle(notebook.title);
+                                }}
+                                onDelete={(e: React.MouseEvent) => handleDeleteNotebook(notebook.id, e)}
+                            />
+                        ))}
+
+                        {/* New Notebook Input */}
+                        {isCreatingNotebook && (
+                            <div className="px-2 py-1 flex items-center gap-2 animate-fade-in">
+                                <input
+                                    autoFocus
+                                    className="flex-1 bg-app-bg border border-app-border rounded px-2 py-1 text-sm focus:ring-1 focus:ring-app-primary outline-none"
+                                    placeholder="Notebook name..."
+                                    value={newNotebookTitle}
+                                    onChange={(e) => setNewNotebookTitle(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleCreateNotebook();
+                                        if (e.key === 'Escape') setIsCreatingNotebook(false);
+                                    }}
+                                />
+                                <div className="flex gap-1">
+                                    <ActionIcon size="sm" color="green" variant="subtle" onClick={handleCreateNotebook}>
+                                        <Check size={14} />
+                                    </ActionIcon>
+                                    <ActionIcon size="sm" color="red" variant="subtle" onClick={() => setIsCreatingNotebook(false)}>
+                                        <X size={14} />
+                                    </ActionIcon>
+                                </div>
+                            </div>
+                        )}
+
+                        {notebooks?.length === 0 && !isCreatingNotebook && (
+                            <p className="text-center text-app-muted text-xs py-4">No notebooks yet</p>
+                        )}
+
+                        {/* Trash Section */}
+                        <div className="mt-6 pt-2 border-t border-app-border/50">
+                            <TrashSection />
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// --- Sub Components ---
+
+function NotebookItem({
+    notebook, isEditing, editTitle, onEditChange, onEditSubmit, onEditCancel, onStartEdit, onDelete
+}: any) {
+    // Selector returns boolean -> efficient re-render control
+    const isExpanded = useUIStore((state) => state.expandedNotebooks.has(notebook.id));
+    const toggleNotebookExpand = useUIStore((state) => state.toggleNotebookExpand);
+
+    const { data: notes, isLoading: notesLoading } = useNotes(notebook.id);
+    const createNote = useCreateNote();
+
+    const handleCreateNote = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!isExpanded) toggleNotebookExpand(notebook.id, true);
+
+        try {
+            await createNote.mutateAsync({
+                notebook_id: notebook.id,
+                title: 'Untitled Note',
+                content: [],
+            });
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    if (isEditing) {
+        return (
+            <div className="px-2 py-1 flex items-center gap-2">
+                <input
+                    autoFocus
+                    className="flex-1 bg-app-bg border border-app-border rounded px-2 py-1 text-sm focus:ring-1 focus:ring-app-primary outline-none"
+                    value={editTitle}
+                    onChange={(e) => onEditChange(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') onEditSubmit();
+                        if (e.key === 'Escape') onEditCancel();
+                    }}
+                />
+                <ActionIcon size="sm" color="green" variant="subtle" onClick={onEditSubmit}>
+                    <Check size={14} />
+                </ActionIcon>
+                <ActionIcon size="sm" color="red" variant="subtle" onClick={onEditCancel}>
+                    <X size={14} />
+                </ActionIcon>
+            </div>
+        );
+    }
+
+    return (
+        <div className="select-none">
+            <div
+                className="group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-app-accent-bg cursor-pointer text-app-text transition-colors"
+                onClick={() => toggleNotebookExpand(notebook.id)}
+            >
+                <div className="text-app-muted group-hover:text-app-primary transition-colors">
+                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </div>
+                <Book size={16} className="text-app-primary/80" />
+                <span className="flex-1 text-sm font-medium truncate">{notebook.title}</span>
+
+                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                    <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="gray"
+                        onClick={handleCreateNote}
+                        title="Add Note"
+                    >
+                        <Plus size={14} />
+                    </ActionIcon>
+                    <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="gray"
+                        onClick={(e) => { e.stopPropagation(); onStartEdit(); }}
+                        title="Rename"
+                    >
+                        <Edit2 size={14} />
+                    </ActionIcon>
+                    <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="red"
+                        onClick={onDelete}
+                        title="Delete"
+                    >
+                        <Trash2 size={14} />
+                    </ActionIcon>
+                </div>
+            </div>
+
+            {isExpanded && (
+                <div className="pl-6 border-l border-app-border/40 ml-2.5 mt-1 space-y-0.5 animate-fade-in">
+                    {notesLoading ? (
+                        <div className="py-2 pl-2">
+                            <Loader2 size={14} className="animate-spin text-app-muted" />
+                        </div>
+                    ) : notes?.length === 0 ? (
+                        <div
+                            className="py-1 pl-2 text-xs text-app-muted italic cursor-pointer hover:text-app-primary"
+                            onClick={handleCreateNote}
+                        >
+                            Empty. Click to add note.
+                        </div>
+                    ) : (
+                        notes?.map((note) => (
+                            <NoteItem key={note.id} note={note} />
+                        ))
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function NoteItem({ note }: { note: any }) {
+    const selectedNoteId = useUIStore((state) => state.selectedNoteId);
+    const selectNote = useUIStore((state) => state.selectNote);
+    const softDeleteNote = useSoftDeleteNote();
+
+    const handleDelete = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (confirm('Move note to trash?')) {
+            await softDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+            if (selectedNoteId === note.id) selectNote(null);
+        }
+    };
+
+    return (
+        <div
+            className={clsx(
+                "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-all text-sm",
+                selectedNoteId === note.id
+                    ? "bg-app-primary/10 text-app-primary font-medium"
+                    : "text-app-text/80 hover:bg-app-accent-bg hover:text-app-text"
+            )}
+            onClick={() => selectNote(note.id)}
+        >
+            <FileText size={14} className={clsx(
+                selectedNoteId === note.id ? "text-app-primary" : "text-app-muted group-hover:text-app-text"
+            )} />
+            <span className="flex-1 truncate">{note.title || 'Untitled'}</span>
+            <button
+                className="opacity-0 group-hover:opacity-100 p-1 text-app-muted hover:text-red-500 transition-all"
+                onClick={handleDelete}
+            >
+                <Trash2 size={12} />
+            </button>
+        </div>
+    );
+}
+
+function TrashSection() {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const { data: trashedNotes } = useTrashedNotes();
+    const selectedNoteId = useUIStore((state) => state.selectedNoteId);
+    const selectNote = useUIStore((state) => state.selectNote);
+    const restoreNote = useRestoreNote();
+    const permDeleteNote = usePermanentlyDeleteNote();
+
+    return (
+        <div className="select-none">
+            <div
+                className={clsx(
+                    "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
+                    isExpanded ? "text-red-500 bg-red-500/5" : "text-app-muted hover:text-red-500 hover:bg-app-accent-bg"
+                )}
+                onClick={() => setIsExpanded(!isExpanded)}
+            >
+                <div className="transition-transform duration-200">
+                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </div>
+                <Trash2 size={16} />
+                <span className="flex-1 text-sm font-medium">Trash</span>
+                {trashedNotes?.length > 0 && (
+                    <span className="text-xs bg-app-border px-1.5 rounded-full">{trashedNotes.length}</span>
+                )}
+            </div>
+
+            {isExpanded && (
+                <div className="pl-6 border-l border-red-500/20 ml-2.5 mt-1 space-y-0.5 animate-fade-in">
+                    {trashedNotes?.length === 0 ? (
+                        <div className="py-1 pl-2 text-xs text-app-muted italic">Trash is empty</div>
+                    ) : (
+                        trashedNotes?.map((note) => (
+                            <div
+                                key={note.id}
+                                className={clsx(
+                                    "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-all text-sm opacity-75 hover:opacity-100",
+                                    selectedNoteId === note.id
+                                        ? "bg-red-500/10 text-red-500"
+                                        : "text-app-text/70 hover:bg-app-accent-bg"
+                                )}
+                                onClick={() => selectNote(note.id)}
+                            >
+                                <FileText size={14} className="text-app-muted" />
+                                <span className="flex-1 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
+                                <div className="hidden group-hover:flex items-center gap-1">
+                                    <button
+                                        title="Restore"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            restoreNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+                                        }}
+                                        className="p-1 text-green-500 hover:bg-green-500/10 rounded"
+                                    >
+                                        <RotateCcw size={12} />
+                                    </button>
+                                    <button
+                                        title="Delete Forever"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (confirm("Delete permanently?")) permDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+                                        }}
+                                        className="p-1 text-red-500 hover:bg-red-500/10 rounded"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            )}
         </div>
     );
 }
