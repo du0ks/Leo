@@ -9,14 +9,15 @@ import { LoginForm } from './components/auth/LoginForm';
 import { Sidebar } from './components/layout/Sidebar';
 import { NoteList } from './components/layout/NoteList';
 import { MainView } from './components/layout/MainView';
-import { ThemeToggle } from './components/ui/ThemeToggle';
+// Removed: import { ThemeToggle } from './components/ui/ThemeToggle'; 
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
-import { LogOut, Menu, Loader2 } from 'lucide-react';
+import { SettingsModal } from './components/settings/SettingsModal';
+import { LogOut, Menu, Loader2, Settings } from 'lucide-react';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60, // 1 minute
+      staleTime: 1000 * 60,
       retry: 1,
     },
   },
@@ -24,54 +25,65 @@ const queryClient = new QueryClient({
 
 function AppContent() {
   const { user, loading, signOut } = useAuth();
-  const { darkMode, sidebarOpen, toggleSidebar } = useUIStore();
+  const {
+    darkMode,
+    themeColor,
+    sidebarOpen,
+    toggleSidebar,
+    setSettingsOpen
+  } = useUIStore();
 
-  // Apply dark mode class to html
+  // Apply theme classes and attributes
   useEffect(() => {
+    const root = document.documentElement;
     if (darkMode) {
-      document.documentElement.classList.add('dark');
+      root.classList.add('dark');
     } else {
-      document.documentElement.classList.remove('dark');
+      root.classList.remove('dark');
     }
-  }, [darkMode]);
+    root.setAttribute('data-theme', themeColor);
+  }, [darkMode, themeColor]);
 
-  // Show loading while checking auth
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-dark-bg">
-        <Loader2 className="w-8 h-8 animate-spin text-dark-muted" />
+      <div className="h-screen flex items-center justify-center bg-app-bg text-app-text">
+        <Loader2 className="w-8 h-8 animate-spin text-app-primary" />
       </div>
     );
   }
 
-  // Show login if not authenticated
   if (!user) {
     return <LoginForm />;
   }
 
-  // Main app layout
   return (
-    <div className="h-screen flex flex-col bg-dark-bg text-dark-text overflow-hidden">
+    <div className="h-screen flex flex-col bg-app-bg text-app-text overflow-hidden transition-colors duration-300">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-dark-border bg-dark-surface/50">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-app-border bg-app-surface/50 backdrop-blur-md z-30">
         <div className="flex items-center gap-3">
           <button
             onClick={toggleSidebar}
-            className="p-2 rounded-lg hover:bg-dark-border transition-colors lg:hidden"
+            className="p-2 rounded-lg hover:bg-app-accent-bg transition-colors lg:hidden"
           >
-            <Menu className="w-5 h-5 text-dark-muted" />
+            <Menu className="w-5 h-5 text-app-muted" />
           </button>
-          <h1 className="text-xl font-bold">Leo</h1>
+          <h1 className="text-xl font-bold tracking-tight">Leo</h1>
         </div>
 
         <div className="flex items-center gap-2">
-          <ThemeToggle />
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="p-2 rounded-lg hover:bg-app-accent-bg transition-colors text-app-muted hover:text-app-primary"
+            title="Settings"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
           <button
             onClick={signOut}
-            className="p-2 rounded-lg hover:bg-dark-border transition-colors"
+            className="p-2 rounded-lg hover:bg-app-accent-bg transition-colors text-app-muted hover:text-red-500"
             title="Sign out"
           >
-            <LogOut className="w-5 h-5 text-dark-muted" />
+            <LogOut className="w-5 h-5" />
           </button>
         </div>
       </header>
@@ -79,17 +91,17 @@ function AppContent() {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar */}
-        <div
+        <aside
           className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-            } lg:translate-x-0 fixed lg:relative z-20 transition-transform duration-200`}
+            } lg:translate-x-0 fixed lg:relative z-20 h-[calc(100vh-64px)] transition-transform duration-200 ease-in-out`}
         >
           <Sidebar />
-        </div>
+        </aside>
 
         {/* Overlay for mobile */}
         {sidebarOpen && (
           <div
-            className="fixed inset-0 bg-black/50 z-10 lg:hidden"
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-10 lg:hidden"
             onClick={toggleSidebar}
           />
         )}
@@ -100,6 +112,8 @@ function AppContent() {
         {/* Main View */}
         <MainView />
       </div>
+
+      <SettingsModal />
     </div>
   );
 }

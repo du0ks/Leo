@@ -5,6 +5,7 @@ import { useCreateBlockNote } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/mantine';
 import { useCallback, useRef, useMemo } from 'react';
 import type { Block, PartialBlock } from '@blocknote/core';
+import { useUIStore } from '../../stores/uiStore';
 
 interface NoteEditorProps {
     content: unknown;
@@ -22,6 +23,7 @@ const getDefaultContent = (): PartialBlock[] => [
 
 export function NoteEditor({ content, onChange, editable = true }: NoteEditorProps) {
     const isInitialLoad = useRef(true);
+    const { darkMode } = useUIStore();
 
     // Safely parse initial content.
     // We rely on the parent component changing the 'key' prop to re-initialize this component
@@ -54,7 +56,7 @@ export function NoteEditor({ content, onChange, editable = true }: NoteEditorPro
                 editor={editor}
                 editable={editable}
                 onChange={handleChange}
-                theme="dark"
+                theme={darkMode ? "dark" : "light"}
                 className="min-h-full"
             />
         </div>

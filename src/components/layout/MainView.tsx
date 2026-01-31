@@ -82,10 +82,13 @@ export function MainView() {
 
     if (!selectedNoteId) {
         return (
-            <div className="flex-1 flex items-center justify-center bg-dark-bg">
-                <div className="text-center">
-                    <p className="text-dark-muted text-lg">
-                        {isTrashView ? 'Select a trashed note to preview' : 'Select a note to start editing'}
+            <div className="flex-1 flex items-center justify-center bg-app-bg">
+                <div className="text-center animate-fade-in">
+                    <div className="w-16 h-16 bg-app-accent-bg rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <Save className="w-8 h-8 text-app-primary opacity-50" />
+                    </div>
+                    <p className="text-app-muted text-lg font-medium">
+                        {isTrashView ? 'Select a trashed note to preview' : 'Select a note to start writing'}
                     </p>
                 </div>
             </div>
@@ -94,16 +97,16 @@ export function MainView() {
 
     if (isLoading && !note) {
         return (
-            <div className="flex-1 flex items-center justify-center bg-dark-bg">
-                <Loader2 className="w-8 h-8 animate-spin text-dark-muted" />
+            <div className="flex-1 flex items-center justify-center bg-app-bg">
+                <Loader2 className="w-8 h-8 animate-spin text-app-primary" />
             </div>
         );
     }
 
     if (!note && !isLoading) {
         return (
-            <div className="flex-1 flex items-center justify-center bg-dark-bg">
-                <p className="text-dark-muted">Note not found</p>
+            <div className="flex-1 flex items-center justify-center bg-app-bg">
+                <p className="text-app-muted">Note not found</p>
             </div>
         );
     }
@@ -111,9 +114,9 @@ export function MainView() {
     const isTrashed = !!note?.deleted_at;
 
     return (
-        <div className="flex-1 flex flex-col bg-dark-bg overflow-hidden">
+        <div className="flex-1 flex flex-col bg-app-bg overflow-hidden transition-all duration-300">
             {/* Title Bar */}
-            <div className="flex items-center gap-3 px-6 py-4 border-b border-dark-border bg-dark-surface/30">
+            <div className="flex items-center gap-3 px-8 py-6 border-b border-app-border bg-app-surface/20">
                 <input
                     type="text"
                     value={title}
@@ -121,7 +124,7 @@ export function MainView() {
                     placeholder="Untitled Note"
                     readOnly={isTrashed}
                     className={clsx(
-                        "flex-1 text-2xl font-semibold bg-transparent text-dark-text placeholder-dark-muted focus:outline-none",
+                        "flex-1 text-3xl font-bold bg-transparent text-app-text placeholder-app-muted focus:outline-none transition-opacity",
                         isTrashed && "opacity-50"
                     )}
                 />
@@ -130,37 +133,42 @@ export function MainView() {
                     <div className="flex items-center gap-2">
                         <button
                             onClick={handleRestore}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-600/20 text-green-400 hover:bg-green-600/30 transition-colors text-sm font-medium"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 text-green-500 hover:bg-green-500/20 transition-all text-sm font-semibold border border-green-500/20"
                         >
                             <RotateCcw className="w-4 h-4" />
                             Restore
                         </button>
                         <button
                             onClick={handlePermanentDelete}
-                            className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors"
+                            className="p-2 rounded-xl hover:bg-red-500/10 text-red-500 transition-all border border-transparent hover:border-red-500/20"
                             title="Delete Permanently"
                         >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-5 h-5" />
                         </button>
                     </div>
                 ) : (
-                    <div className="flex items-center gap-2 text-dark-muted">
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-app-accent-bg text-app-primary border border-app-primary/10">
                         {isSaving || updateNote.isPending ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : (
-                            <Save className="w-4 h-4" />
+                            <Save className="w-3.5 h-3.5" />
                         )}
-                        <span className="text-xs">{(isSaving || updateNote.isPending) ? 'Saving...' : 'Saved'}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider">
+                            {(isSaving || updateNote.isPending) ? 'Saving' : 'Saved'}
+                        </span>
                     </div>
                 )}
             </div>
 
-            {/* Editor */}
-            <div className={clsx("flex-1 overflow-auto px-4", isTrashed && "opacity-80 grayscale-[0.2]")}>
+            {/* Editor Container */}
+            <div className={clsx(
+                "flex-1 overflow-auto px-4 py-2 max-w-5xl mx-auto w-full",
+                isTrashed && "opacity-70 saturate-50 pointer-events-none"
+            )}>
                 {isTrashed && (
-                    <div className="mx-6 my-4 p-3 bg-red-900/10 border border-red-900/20 rounded-lg flex items-center gap-3 text-red-400 text-sm">
-                        <Trash2 className="w-4 h-4 shrink-0" />
-                        <span>This note is in the trash. You can preview it, but you must restore it to edit.</span>
+                    <div className="mx-6 my-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-4 text-red-500 text-sm shadow-sm animate-fade-in">
+                        <Trash2 className="w-5 h-5 shrink-0" />
+                        <span className="font-medium">This note is in the trash. It's read-only until restored.</span>
                     </div>
                 )}
                 <NoteEditor

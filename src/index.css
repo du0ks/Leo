@@ -3,25 +3,174 @@
 /* Google Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
 
-/* Custom CSS Variables for theming */
 @theme {
   --font-family-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
-  /* Dark red theme colors */
-  --color-dark-bg: #1a0b0b;
-  --color-dark-surface: #2d1616;
-  --color-dark-border: #4a2323;
-  --color-dark-text: #fcebeb;
-  --color-dark-muted: #a67d7d;
+  /* Theme variables - data-theme attribute driven */
+  --color-app-bg: var(--bg);
+  --color-app-surface: var(--surface);
+  --color-app-border: var(--border);
+  --color-app-text: var(--text);
+  --color-app-muted: var(--muted);
+  --color-app-primary: var(--primary);
+  --color-app-primary-hover: var(--primary-hover);
+  --color-app-accent-bg: var(--accent-bg);
 }
 
-/* Root styling */
 :root {
   font-family: var(--font-family-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Base Light Theme - NEUTRAL BACKGROUNDS for all colors */
+  --bg: #ffffff;
+  --surface: #f8fafc;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --muted: #64748b;
+
+  /* Default Primary (Blue) */
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --accent-bg: rgba(59, 130, 246, 0.1);
+}
+
+/* Light Mode Color Overrides - Only changing primaries/accents, NOT backgrounds */
+[data-theme='red'] {
+  --primary: #ef4444;
+  --primary-hover: #dc2626;
+  --accent-bg: rgba(239, 68, 68, 0.1);
+}
+
+[data-theme='yellow'] {
+  --primary: #d97706;
+  --primary-hover: #b45309;
+  --accent-bg: rgba(217, 119, 6, 0.1);
+  /* Darker yellow for better contrast on white */
+}
+
+[data-theme='green'] {
+  --primary: #16a34a;
+  --primary-hover: #15803d;
+  --accent-bg: rgba(22, 163, 74, 0.1);
+}
+
+[data-theme='grey'] {
+  --primary: #475569;
+  --primary-hover: #334155;
+  --accent-bg: rgba(71, 85, 105, 0.1);
+}
+
+[data-theme='black'] {
+  --primary: #000000;
+  --primary-hover: #1a1a1a;
+  --accent-bg: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme='purple'] {
+  --primary: #9333ea;
+  --primary-hover: #7e22ce;
+  --accent-bg: rgba(147, 51, 234, 0.1);
+}
+
+[data-theme='pink'] {
+  --primary: #db2777;
+  --primary-hover: #be185d;
+  --accent-bg: rgba(219, 39, 119, 0.1);
+}
+
+
+/* Dark Mode - Keeping tinted backgrounds for premium feel */
+.dark {
+  --text: #f1f5f9;
+  --muted: #94a3b8;
+
+  /* Default Dark (Blue) */
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --border: #334155;
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --accent-bg: rgba(59, 130, 246, 0.2);
+}
+
+.dark[data-theme='red'] {
+  --bg: #1a0b0b;
+  --surface: #2d1616;
+  --border: #4a2323;
+  --text: #fcebeb;
+  --muted: #a67d7d;
+  --primary: #ef4444;
+  --primary-hover: #dc2626;
+  --accent-bg: rgba(239, 68, 68, 0.2);
+}
+
+.dark[data-theme='yellow'] {
+  --bg: #1a1605;
+  --surface: #2d260a;
+  --border: #4a3e10;
+  --text: #fcf9eb;
+  --muted: #a6967d;
+  --primary: #eab308;
+  --primary-hover: #ca8a04;
+  --accent-bg: rgba(234, 179, 8, 0.2);
+}
+
+.dark[data-theme='green'] {
+  --bg: #051a0b;
+  --surface: #0a2d16;
+  --border: #104a23;
+  --text: #ebfcf1;
+  --muted: #7da688;
+  --primary: #22c55e;
+  --primary-hover: #16a34a;
+  --accent-bg: rgba(34, 197, 94, 0.2);
+}
+
+.dark[data-theme='grey'] {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --border: #334155;
+  --text: #f1f5f9;
+  --muted: #94a3b8;
+  --primary: #94a3b8;
+  --primary-hover: #cbd5e1;
+  --accent-bg: rgba(148, 163, 184, 0.2);
+}
+
+.dark[data-theme='black'] {
+  --bg: #000000;
+  --surface: #121212;
+  --border: #262626;
+  --text: #ffffff;
+  --muted: #a3a3a3;
+  --primary: #ffffff;
+  --primary-hover: #e5e5e5;
+  --accent-bg: rgba(255, 255, 255, 0.2);
+}
+
+.dark[data-theme='purple'] {
+  --bg: #11051a;
+  --surface: #1e0a2d;
+  --border: #33104a;
+  --text: #f5ebfc;
+  --muted: #8e7da6;
+  --primary: #a855f7;
+  --primary-hover: #9333ea;
+  --accent-bg: rgba(168, 85, 247, 0.2);
+}
+
+.dark[data-theme='pink'] {
+  --bg: #1a0511;
+  --surface: #2d0a1e;
+  --border: #4a1033;
+  --text: #fcebf5;
+  --muted: #a67d93;
+  --primary: #ec4899;
+  --primary-hover: #db2777;
+  --accent-bg: rgba(236, 72, 153, 0.2);
 }
 
 html,
@@ -32,10 +181,10 @@ body,
   padding: 0;
 }
 
-/* Dark mode base */
-html.dark {
-  background-color: var(--color-dark-bg);
-  color: var(--color-dark-text);
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Custom scrollbar */
@@ -49,32 +198,49 @@ html.dark {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4a2323;
+  background: var(--border);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b3434;
+  background: var(--muted);
 }
 
 /* BlockNote customization */
 .note-editor {
-  --bn-colors-editor-background: #1a0b0b;
-  --bn-colors-editor-text: #fcebeb;
+  /* Override BlockNote variables to use our app's theme variables */
+  --bn-colors-editor-background: transparent;
+  /* Make it transparent so app bg shows through */
+  --bn-colors-editor-text: var(--text);
+  --bn-colors-menu-background: var(--surface);
+  --bn-colors-menu-text: var(--text);
+  --bn-colors-hovered-background: var(--accent-bg);
+  --bn-colors-selected-background: var(--accent-bg);
+}
+
+.note-editor .bn-editor {
+  background-color: transparent !important;
+  /* Force transparency */
+  color: var(--text) !important;
 }
 
 .note-editor .bn-container {
-  background: transparent;
+  background: transparent !important;
+}
+
+/* Ensure empty blocks or specific text elements also inherit correct color */
+.note-editor .bn-block-content {
+  color: var(--text);
 }
 
 /* Selection color */
 ::selection {
-  background-color: rgba(239, 68, 68, 0.3);
+  background-color: var(--accent-bg);
 }
 
 /* Focus styles */
 input:focus,
 button:focus-visible {
-  outline: 2px solid #ef4444;
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
