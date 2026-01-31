@@ -181,10 +181,10 @@ function NotebookItem({
 
     if (isEditing) {
         return (
-            <div className="px-2 py-1 flex items-center gap-2">
+            <div className="px-2 py-1 flex items-center gap-1">
                 <input
                     autoFocus
-                    className="flex-1 bg-app-bg border border-app-border rounded px-2 py-1 text-sm focus:ring-1 focus:ring-app-primary outline-none"
+                    className="min-w-0 flex-1 bg-app-bg border border-app-border rounded px-2 py-1 text-sm focus:ring-1 focus:ring-app-primary outline-none"
                     value={editTitle}
                     onChange={(e) => onEditChange(e.target.value)}
                     onKeyDown={(e) => {
@@ -214,7 +214,10 @@ function NotebookItem({
                 <Book size={16} className="text-app-primary/80" />
                 <span className="flex-1 text-sm font-medium truncate">{notebook.title}</span>
 
-                <div className="flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                <div className={clsx(
+                    "flex items-center gap-1 transition-opacity",
+                    isExpanded ? "opacity-100" : "opacity-0 lg:group-hover:opacity-100"
+                )}>
                     <ActionIcon
                         size="sm"
                         variant="subtle"
@@ -297,7 +300,10 @@ function NoteItem({ note }: { note: any }) {
             )} />
             <span className="flex-1 truncate">{note.title || 'Untitled'}</span>
             <button
-                className="p-1 text-app-muted hover:text-red-500 transition-all opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
+                className={clsx(
+                    "p-1 text-app-muted hover:text-red-500 transition-all",
+                    selectedNoteId === note.id ? "opacity-100" : "opacity-0 lg:group-hover:opacity-100"
+                )}
                 onClick={handleDelete}
                 title="Move to Trash"
             >
