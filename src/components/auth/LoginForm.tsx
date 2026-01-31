@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { Sparkles, ArrowRight, Mail, Lock, Loader2 } from 'lucide-react';
+import { ArrowRight, Mail, Lock, Loader2 } from 'lucide-react';
 
 export function LoginForm() {
     const [email, setEmail] = useState('');
@@ -35,11 +35,11 @@ export function LoginForm() {
             <div className="w-full max-w-md">
                 {/* Brand Header */}
                 <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center p-3 mb-4 rounded-2xl bg-app-accent-bg glow-accent">
-                        <Sparkles className="w-8 h-8 text-app-primary" />
+                    <div className="inline-flex items-center justify-center mb-6">
+                        <img src="/leo.png" alt="Leo Logo" className="w-24 h-24 object-contain drop-shadow-xl animate-float" />
                     </div>
-                    <h1 className="text-3xl font-bold tracking-tight text-app-text mb-2 translate-y-0 transition-all">
-                        Leo Notes
+                    <h1 className="text-4xl font-black tracking-tighter text-app-text mb-2 bg-gradient-to-r from-app-primary to-app-primary-hover bg-clip-text text-transparent">
+                        Leo
                     </h1>
                     <p className="text-app-muted">
                         Capture your thoughts, style your world.

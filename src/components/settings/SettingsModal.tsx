@@ -122,8 +122,9 @@ export function SettingsModal() {
                 </section>
 
                 {/* User Info / Other settings could go here */}
-                <section>
-                    <Text size="xs" c="dimmed" ta="center" mt="xl">
+                <section className="flex flex-col items-center">
+                    <img src="/leo.png" alt="Leo" className="w-8 h-8 object-contain mb-2 opacity-30 grayscale hover:grayscale-0 hover:opacity-100 transition-all cursor-help" />
+                    <Text size="xs" c="dimmed" ta="center">
                         Leo Version 0.1.0 • Privacy First Notes
                     </Text>
                 </section>
