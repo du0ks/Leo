@@ -60,7 +60,7 @@ export const useUIStore = create<UIState>()(
             selectedNotebookId: null,
             isTrashView: false,
             darkMode: true,
-            themeColor: 'blue',
+            themeColor: 'yellow',
             settingsOpen: false,
 
             toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),

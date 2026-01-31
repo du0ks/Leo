@@ -34,14 +34,14 @@ export function LoginForm() {
         <div className="min-h-screen flex items-center justify-center bg-app-bg px-4 transition-colors duration-500">
             <div className="w-full max-w-md">
                 {/* Brand Header */}
-                <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center mb-6">
-                        <img src="/leo.png" alt="Leo Logo" className="w-24 h-24 object-contain drop-shadow-xl animate-float" />
+                <div className="text-center mb-10">
+                    <div className="inline-flex items-center justify-center mb-2">
+                        <img src="/leo.png" alt="Leo Logo" className="w-32 h-32 object-contain drop-shadow-2xl animate-float" />
                     </div>
-                    <h1 className="text-4xl font-black tracking-tighter text-app-text mb-2 bg-gradient-to-r from-app-primary to-app-primary-hover bg-clip-text text-transparent">
+                    <h1 className="text-5xl font-black tracking-tighter text-app-text mb-2 bg-gradient-to-r from-app-primary to-app-primary-hover bg-clip-text text-transparent">
                         Leo
                     </h1>
-                    <p className="text-app-muted">
+                    <p className="text-app-muted text-lg">
                         Capture your thoughts, style your world.
                     </p>
                 </div>
@@ -76,7 +76,7 @@ export function LoginForm() {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     placeholder="Email address"
-                                    className="w-full pl-12 pr-4 py-3.5 bg-app-bg border border-app-border rounded-xl text-app-text placeholder:text-app-muted focus:outline-none focus:ring-2 focus:ring-app-primary/50 focus:border-app-primary transition-all"
+                                    className="w-full !pl-12 pr-4 py-3.5 bg-app-bg border border-app-border rounded-xl text-app-text placeholder:text-app-muted focus:outline-none focus:ring-2 focus:ring-app-primary/50 focus:border-app-primary transition-all"
                                     required
                                 />
                             </div>
@@ -90,7 +90,7 @@ export function LoginForm() {
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     placeholder="Password"
-                                    className="w-full pl-12 pr-4 py-3.5 bg-app-bg border border-app-border rounded-xl text-app-text placeholder:text-app-muted focus:outline-none focus:ring-2 focus:ring-app-primary/50 focus:border-app-primary transition-all"
+                                    className="w-full !pl-12 pr-4 py-3.5 bg-app-bg border border-app-border rounded-xl text-app-text placeholder:text-app-muted focus:outline-none focus:ring-2 focus:ring-app-primary/50 focus:border-app-primary transition-all"
                                     required
                                 />
                             </div>
