@@ -12,6 +12,7 @@ export interface Notebook {
     title: string;
     created_at: string;
     updated_at: string;
+    deleted_at: string | null; // Soft delete timestamp
 }
 
 export interface Note {
@@ -21,6 +22,7 @@ export interface Note {
     content: unknown; // BlockNote JSON
     created_at: string;
     updated_at: string;
+    deleted_at: string | null; // Soft delete timestamp
 }
 
 export interface NewNotebook {

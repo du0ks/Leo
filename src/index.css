@@ -7,12 +7,12 @@
 @theme {
   --font-family-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
-  /* Dark theme colors */
-  --color-dark-bg: #0f172a;
-  --color-dark-surface: #1e293b;
-  --color-dark-border: #334155;
-  --color-dark-text: #f1f5f9;
-  --color-dark-muted: #94a3b8;
+  /* Dark red theme colors */
+  --color-dark-bg: #1a0b0b;
+  --color-dark-surface: #2d1616;
+  --color-dark-border: #4a2323;
+  --color-dark-text: #fcebeb;
+  --color-dark-muted: #a67d7d;
 }
 
 /* Root styling */
@@ -49,18 +49,18 @@ html.dark {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #4a2323;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #6b3434;
 }
 
 /* BlockNote customization */
 .note-editor {
-  --bn-colors-editor-background: #0f172a;
-  --bn-colors-editor-text: #f1f5f9;
+  --bn-colors-editor-background: #1a0b0b;
+  --bn-colors-editor-text: #fcebeb;
 }
 
 .note-editor .bn-container {
@@ -69,12 +69,12 @@ html.dark {
 
 /* Selection color */
 ::selection {
-  background-color: rgba(59, 130, 246, 0.3);
+  background-color: rgba(239, 68, 68, 0.3);
 }
 
 /* Focus styles */
 input:focus,
 button:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid #ef4444;
   outline-offset: 2px;
 }
