@@ -27,21 +27,23 @@ export function useNotebooks() {
     return useQuery({
         queryKey: ['notebooks'],
         queryFn: async (): Promise<Notebook[]> => {
-            const q = query(
-                getNotebooksRef(),
-                where('deletedAt', '==', null),
-                orderBy('createdAt', 'desc')
-            );
-
+            const q = query(getNotebooksRef()); // Simplified to avoid index errors
             const snapshot = await getDocs(q);
-            return snapshot.docs.map(docSnap => ({
-                id: docSnap.id,
-                user_id: auth.currentUser!.uid,
-                title: docSnap.data().title,
-                created_at: (docSnap.data().createdAt as Timestamp).toDate().toISOString(),
-                updated_at: (docSnap.data().updatedAt as Timestamp).toDate().toISOString(),
-                deleted_at: null,
-            })) as Notebook[];
+
+            return snapshot.docs
+                .map(docSnap => {
+                    const data = docSnap.data({ serverTimestamps: 'estimate' });
+                    return {
+                        id: docSnap.id,
+                        user_id: auth.currentUser?.uid || '',
+                        title: data.title,
+                        created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                        updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                        deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
+                    };
+                })
+                .filter(nb => nb.deleted_at === null) // Client-side filtering
+                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) as Notebook[];
         },
         enabled: !!auth.currentUser,
     });
@@ -52,22 +54,25 @@ export function useTrashedNotebooks() {
     return useQuery({
         queryKey: ['notebooks', 'trashed'],
         queryFn: async (): Promise<Notebook[]> => {
-            const q = query(
-                getNotebooksRef(),
-                where('deletedAt', '!=', null),
-                orderBy('deletedAt', 'desc')
-            );
-
+            const q = query(getNotebooksRef());
             const snapshot = await getDocs(q);
-            return snapshot.docs.map(docSnap => ({
-                id: docSnap.id,
-                user_id: auth.currentUser!.uid,
-                title: docSnap.data().title,
-                created_at: (docSnap.data().createdAt as Timestamp).toDate().toISOString(),
-                updated_at: (docSnap.data().updatedAt as Timestamp).toDate().toISOString(),
-                deleted_at: (docSnap.data().deletedAt as Timestamp).toDate().toISOString(),
-            })) as Notebook[];
+
+            return snapshot.docs
+                .map(docSnap => {
+                    const data = docSnap.data({ serverTimestamps: 'estimate' });
+                    return {
+                        id: docSnap.id,
+                        user_id: auth.currentUser?.uid || '',
+                        title: data.title,
+                        created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                        updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                        deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
+                    };
+                })
+                .filter(nb => nb.deleted_at !== null)
+                .sort((a, b) => new Date(b.deleted_at!).getTime() - new Date(a.deleted_at!).getTime()) as Notebook[];
         },
+        enabled: !!auth.currentUser,
     });
 }
 

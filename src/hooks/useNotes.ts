@@ -23,35 +23,35 @@ const getNotesRef = (notebookId: string) => {
     return collection(db, 'users', userId, 'notebooks', notebookId, 'notes');
 };
 
-// Fetch notes for a notebook
+// Fetch notes for a specific notebook
 export function useNotes(notebookId: string | null) {
     return useQuery({
         queryKey: ['notes', notebookId],
         queryFn: async (): Promise<Note[]> => {
-            if (!notebookId) return [];
-
-            const q = query(
-                getNotesRef(notebookId),
-                where('deletedAt', '==', null),
-                orderBy('updatedAt', 'desc')
-            );
-
+            const q = query(getNotesRef(notebookId!)); // No filters to avoid index requirement
             const snapshot = await getDocs(q);
-            return snapshot.docs.map(docSnap => ({
-                id: docSnap.id,
-                notebook_id: notebookId,
-                title: docSnap.data().title,
-                content: docSnap.data().content,
-                created_at: (docSnap.data().createdAt as Timestamp).toDate().toISOString(),
-                updated_at: (docSnap.data().updatedAt as Timestamp).toDate().toISOString(),
-                deleted_at: null,
-            })) as Note[];
+
+            return snapshot.docs
+                .map(docSnap => {
+                    const data = docSnap.data({ serverTimestamps: 'estimate' });
+                    return {
+                        id: docSnap.id,
+                        notebook_id: notebookId!,
+                        title: data.title,
+                        content: data.content,
+                        created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                        updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                        deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
+                    };
+                })
+                .filter(n => n.deleted_at === null)
+                .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()) as Note[];
         },
         enabled: !!notebookId && !!auth.currentUser,
     });
 }
 
-// Fetch trashed notes (across all notebooks)
+// Fetch trashed notes across all notebooks
 export function useTrashedNotes() {
     return useQuery({
         queryKey: ['notes', 'trashed'],
@@ -59,70 +59,69 @@ export function useTrashedNotes() {
             const userId = auth.currentUser?.uid;
             if (!userId) return [];
 
-            // Need to fetch all notebooks first, then get trashed notes
+            // 1. Get all notebooks
             const notebooksRef = collection(db, 'users', userId, 'notebooks');
             const notebooksSnapshot = await getDocs(notebooksRef);
 
-            const trashedNotes: Note[] = [];
+            // 2. Fetch all notes from each notebook and filter in JS
+            const allTrashedNotes: Note[] = [];
+            for (const nbDoc of notebooksSnapshot.docs) {
+                const notesRef = collection(db, 'users', userId, 'notebooks', nbDoc.id, 'notes');
+                const snp = await getDocs(notesRef);
 
-            for (const notebookDoc of notebooksSnapshot.docs) {
-                const notesRef = collection(notebookDoc.ref, 'notes');
-                const q = query(
-                    notesRef,
-                    where('deletedAt', '!=', null),
-                    orderBy('deletedAt', 'desc')
-                );
+                snp.docs.forEach(docSnap => {
+                    const data = docSnap.data({ serverTimestamps: 'estimate' });
+                    const deletedAtStr = data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null;
 
-                const notesSnapshot = await getDocs(q);
-                notesSnapshot.docs.forEach(noteDoc => {
-                    trashedNotes.push({
-                        id: noteDoc.id,
-                        notebook_id: notebookDoc.id,
-                        title: noteDoc.data().title,
-                        content: noteDoc.data().content,
-                        created_at: (noteDoc.data().createdAt as Timestamp).toDate().toISOString(),
-                        updated_at: (noteDoc.data().updatedAt as Timestamp).toDate().toISOString(),
-                        deleted_at: (noteDoc.data().deletedAt as Timestamp).toDate().toISOString(),
-                    } as Note);
+                    if (deletedAtStr) {
+                        allTrashedNotes.push({
+                            id: docSnap.id,
+                            notebook_id: nbDoc.id,
+                            title: data.title,
+                            content: data.content,
+                            created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                            updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                            deleted_at: deletedAtStr,
+                        });
+                    }
                 });
             }
 
-            // Sort by deletedAt desc
-            return trashedNotes.sort((a, b) =>
+            return allTrashedNotes.sort((a, b) =>
                 new Date(b.deleted_at!).getTime() - new Date(a.deleted_at!).getTime()
             );
         },
+        enabled: !!auth.currentUser,
     });
 }
 
-// Fetch single note
+// Fetch a single note
 export function useNote(noteId: string | null, notebookId?: string | null) {
     return useQuery({
         queryKey: ['note', noteId],
         queryFn: async (): Promise<Note | null> => {
             if (!noteId || !notebookId) return null;
-
             const docRef = doc(getNotesRef(notebookId), noteId);
-            const snapshot = await getDoc(docRef);
+            const docSnap = await getDoc(docRef);
 
-            if (!snapshot.exists()) return null;
+            if (!docSnap.exists()) return null;
 
-            const data = snapshot.data();
+            const data = docSnap.data({ serverTimestamps: 'estimate' });
             return {
-                id: snapshot.id,
+                id: docSnap.id,
                 notebook_id: notebookId,
                 title: data.title,
                 content: data.content,
-                created_at: (data.createdAt as Timestamp).toDate().toISOString(),
-                updated_at: (data.updatedAt as Timestamp).toDate().toISOString(),
+                created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
                 deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
-            };
+            } as Note;
         },
         enabled: !!noteId && !!notebookId && !!auth.currentUser,
     });
 }
 
-// Create note
+// Mutations
 export function useCreateNote() {
     const queryClient = useQueryClient();
 
@@ -130,7 +129,7 @@ export function useCreateNote() {
         mutationFn: async (note: NewNote): Promise<Note> => {
             const docRef = await addDoc(getNotesRef(note.notebook_id), {
                 title: note.title || 'Untitled',
-                content: note.content || {},
+                content: note.content || [],
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 deletedAt: null,
@@ -140,19 +139,18 @@ export function useCreateNote() {
                 id: docRef.id,
                 notebook_id: note.notebook_id,
                 title: note.title || 'Untitled',
-                content: note.content || {},
+                content: note.content || [],
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 deleted_at: null,
             };
         },
-        onSuccess: (data) => {
-            queryClient.invalidateQueries({ queryKey: ['notes', data.notebook_id] });
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['notes', variables.notebook_id] });
         },
     });
 }
 
-// Update note
 export function useUpdateNote() {
     const queryClient = useQueryClient();
 
@@ -183,72 +181,69 @@ export function useUpdateNote() {
             await queryClient.cancelQueries({ queryKey: ['note', updatedNote.id] });
             const previousNote = queryClient.getQueryData(['note', updatedNote.id]);
 
-            queryClient.setQueryData(['note', updatedNote.id], (old: Note | undefined) => {
-                if (!old) return old;
-                return { ...old, ...updatedNote };
-            });
+            if (previousNote) {
+                queryClient.setQueryData(['note', updatedNote.id], (old: any) => ({
+                    ...old,
+                    ...updatedNote,
+                    updated_at: new Date().toISOString(),
+                }));
+            }
 
             return { previousNote };
         },
-        onError: (_err, updatedNote, context) => {
-            if (context?.previousNote) {
-                queryClient.setQueryData(['note', updatedNote.id], context.previousNote);
-            }
-        },
-        onSettled: (data) => {
-            if (data) {
-                queryClient.invalidateQueries({ queryKey: ['note', data.id] });
-                queryClient.invalidateQueries({ queryKey: ['notes', data.notebookId] });
-            }
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['note', data!!.id] });
+            queryClient.invalidateQueries({ queryKey: ['notes', data!!.notebookId] });
         },
     });
 }
 
-// Soft delete note
 export function useSoftDeleteNote() {
     const queryClient = useQueryClient();
 
     return useMutation({
         mutationFn: async ({ id, notebookId }: { id: string; notebookId: string }) => {
             const docRef = doc(getNotesRef(notebookId), id);
-            await updateDoc(docRef, { deletedAt: serverTimestamp() });
-            return notebookId;
+            await updateDoc(docRef, {
+                deletedAt: serverTimestamp(),
+            });
+            return { id, notebookId };
         },
-        onSuccess: (notebookId) => {
-            queryClient.invalidateQueries({ queryKey: ['notes', notebookId] });
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['notes', data.notebookId] });
             queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
 }
 
-// Restore note
 export function useRestoreNote() {
     const queryClient = useQueryClient();
 
     return useMutation({
         mutationFn: async ({ id, notebookId }: { id: string; notebookId: string }) => {
             const docRef = doc(getNotesRef(notebookId), id);
-            await updateDoc(docRef, { deletedAt: null });
-            return notebookId;
+            await updateDoc(docRef, {
+                deletedAt: null,
+            });
+            return { id, notebookId };
         },
-        onSuccess: (notebookId) => {
-            queryClient.invalidateQueries({ queryKey: ['notes', notebookId] });
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['notes', data.notebookId] });
             queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
 }
 
-// Permanently delete note
 export function usePermanentlyDeleteNote() {
     const queryClient = useQueryClient();
 
     return useMutation({
         mutationFn: async ({ id, notebookId }: { id: string; notebookId: string }) => {
-            await deleteDoc(doc(getNotesRef(notebookId), id));
-            return notebookId;
+            const docRef = doc(getNotesRef(notebookId), id);
+            await deleteDoc(docRef);
+            return { id, notebookId };
         },
-        onSuccess: (notebookId) => {
-            queryClient.invalidateQueries({ queryKey: ['notes', notebookId] });
+        onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
