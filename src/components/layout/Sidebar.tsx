@@ -214,7 +214,7 @@ function NotebookItem({
                 <Book size={16} className="text-app-primary/80" />
                 <span className="flex-1 text-sm font-medium truncate">{notebook.title}</span>
 
-                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                <div className="flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                     <ActionIcon
                         size="sm"
                         variant="subtle"
@@ -297,8 +297,9 @@ function NoteItem({ note }: { note: any }) {
             )} />
             <span className="flex-1 truncate">{note.title || 'Untitled'}</span>
             <button
-                className="opacity-0 group-hover:opacity-100 p-1 text-app-muted hover:text-red-500 transition-all"
+                className="p-1 text-app-muted hover:text-red-500 transition-all opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
                 onClick={handleDelete}
+                title="Move to Trash"
             >
                 <Trash2 size={12} />
             </button>
@@ -353,7 +354,7 @@ function TrashSection() {
                                 >
                                     <Book size={14} className="text-app-muted" />
                                     <span className="flex-1 truncate line-through decoration-red-500/50">{notebook.title}</span>
-                                    <div className="hidden group-hover:flex items-center gap-1">
+                                    <div className="flex items-center gap-1 lg:hidden lg:group-hover:flex">
                                         <button
                                             title="Restore Notebook"
                                             onClick={(e) => {
@@ -403,7 +404,7 @@ function TrashSection() {
                                 >
                                     <FileText size={14} className="text-app-muted" />
                                     <span className="flex-1 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
-                                    <div className="hidden group-hover:flex items-center gap-1">
+                                    <div className="flex items-center gap-1 lg:hidden lg:group-hover:flex">
                                         <button
                                             title="Restore Note"
                                             onClick={(e) => {
