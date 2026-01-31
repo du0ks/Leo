@@ -44,6 +44,8 @@ export function useAuth() {
             email: user.email,
             displayName: null,
             createdAt: new Date(),
+            darkMode: true,
+            themeColor: 'blue',
         });
 
         // Sign out until verified

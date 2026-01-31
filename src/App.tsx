@@ -5,6 +5,7 @@ import '@mantine/core/styles.css';
 
 import { useAuth } from './hooks/useAuth';
 import { useUIStore } from './stores/uiStore';
+import { useUserSettings } from './hooks/useUserSettings';
 import { LoginForm } from './components/auth/LoginForm';
 import { Sidebar } from './components/layout/Sidebar';
 import { MainView } from './components/layout/MainView';
@@ -32,6 +33,8 @@ function AppContent() {
     setSettingsOpen
   } = useUIStore();
 
+  const { isLoading: settingsLoading } = useUserSettings();
+
   // Apply theme classes and attributes
   useEffect(() => {
     const root = document.documentElement;
@@ -43,7 +46,7 @@ function AppContent() {
     root.setAttribute('data-theme', themeColor);
   }, [darkMode, themeColor]);
 
-  if (loading) {
+  if (loading || settingsLoading) {
     return (
       <div className="h-screen flex items-center justify-center bg-app-bg text-app-text">
         <Loader2 className="w-8 h-8 animate-spin text-app-primary" />
@@ -92,7 +95,7 @@ function AppContent() {
         {/* Sidebar */}
         <aside
           className={clsx(
-            "fixed inset-y-0 left-0 lg:relative z-20 transition-all duration-300 ease-in-out bg-app-surface border-r border-app-border overflow-hidden",
+            "absolute inset-y-0 left-0 lg:relative z-20 transition-all duration-300 ease-in-out bg-app-surface border-r border-app-border overflow-hidden",
             sidebarOpen ? "w-64 translate-x-0" : "w-0 -translate-x-full lg:translate-x-0"
           )}
         >
