@@ -65,26 +65,22 @@ export function Sidebar() {
     };
 
     return (
-        <div className="w-64 h-full bg-dark-surface border-r border-dark-border flex flex-col">
+        <div className="w-64 h-full bg-app-surface border-r border-app-border flex flex-col">
             {/* Header */}
-            <div className="p-4 border-b border-dark-border">
-                <h2 className="text-lg font-semibold text-dark-text">Leo</h2>
+            <div className="p-4 border-b border-app-border">
+                <h2 className="text-lg font-semibold text-app-text">Notebooks</h2>
             </div>
 
             {/* Main Scrollable Area */}
             <div className="flex-1 overflow-y-auto p-2 flex flex-col">
                 {/* Notebooks Section */}
                 <div className="flex-1">
-                    <div className="px-3 mb-2">
-                        <h3 className="text-xs font-bold text-dark-muted uppercase tracking-wider">Notebooks</h3>
-                    </div>
-
                     {isLoading ? (
                         <div className="flex items-center justify-center py-8">
-                            <Loader2 className="w-6 h-6 animate-spin text-dark-muted" />
+                            <Loader2 className="w-6 h-6 animate-spin text-app-muted" />
                         </div>
                     ) : notebooks?.length === 0 ? (
-                        <p className="text-dark-muted text-sm text-center py-8">
+                        <p className="text-app-muted text-sm text-center py-8">
                             No notebooks yet
                         </p>
                     ) : (
@@ -101,30 +97,30 @@ export function Sidebar() {
                                                     if (e.key === 'Enter') handleRename(notebook.id);
                                                     if (e.key === 'Escape') setEditingId(null);
                                                 }}
-                                                className="flex-1 px-2 py-1 rounded bg-dark-bg border border-dark-border text-dark-text text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                                                className="flex-1 px-2 py-1 rounded bg-app-bg border border-app-border text-app-text text-sm focus:outline-none focus:ring-2 focus:ring-app-primary"
                                                 autoFocus
                                             />
                                             <button
                                                 onClick={() => handleRename(notebook.id)}
-                                                className="p-1 hover:bg-dark-border rounded"
+                                                className="p-1 hover:bg-app-accent-bg rounded"
                                             >
-                                                <Check className="w-4 h-4 text-green-400" />
+                                                <Check className="w-4 h-4 text-green-500" />
                                             </button>
                                             <button
                                                 onClick={() => setEditingId(null)}
-                                                className="p-1 hover:bg-dark-border rounded"
+                                                className="p-1 hover:bg-app-accent-bg rounded"
                                             >
-                                                <X className="w-4 h-4 text-red-400" />
+                                                <X className="w-4 h-4 text-red-500" />
                                             </button>
                                         </div>
                                     ) : (
                                         <div
                                             onClick={() => selectNotebook(notebook.id)}
                                             className={clsx(
-                                                'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left group transition-colors cursor-pointer',
+                                                'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left group transition-all cursor-pointer',
                                                 selectedNotebookId === notebook.id
-                                                    ? 'bg-red-600/20 text-red-400'
-                                                    : 'text-dark-text hover:bg-dark-border'
+                                                    ? 'bg-app-accent-bg text-app-primary font-medium'
+                                                    : 'text-app-text hover:bg-app-accent-bg'
                                             )}
                                         >
                                             <Book className="w-4 h-4 shrink-0" />
@@ -135,7 +131,7 @@ export function Sidebar() {
                                                         e.stopPropagation();
                                                         startEditing(notebook.id, notebook.title);
                                                     }}
-                                                    className="p-1 hover:bg-dark-bg rounded"
+                                                    className="p-1 hover:bg-app-bg rounded"
                                                 >
                                                     <Edit2 className="w-3 h-3" />
                                                 </button>
@@ -144,7 +140,7 @@ export function Sidebar() {
                                                         e.stopPropagation();
                                                         handleDelete(notebook.id);
                                                     }}
-                                                    className="p-1 hover:bg-dark-bg rounded text-red-500/80"
+                                                    className="p-1 hover:bg-app-bg rounded text-red-500/80 hover:text-red-500"
                                                 >
                                                     <Trash2 className="w-3 h-3" />
                                                 </button>
@@ -168,45 +164,41 @@ export function Sidebar() {
                                     if (e.key === 'Escape') setIsCreating(false);
                                 }}
                                 placeholder="Notebook name..."
-                                className="flex-1 px-2 py-1 rounded bg-dark-bg border border-dark-border text-dark-text text-sm placeholder-dark-muted focus:outline-none focus:ring-1 focus:ring-red-500"
+                                className="flex-1 px-2 py-1 rounded bg-app-bg border border-app-border text-app-text text-sm placeholder-app-muted focus:outline-none focus:ring-2 focus:ring-app-primary"
                                 autoFocus
                             />
-                            <button onClick={handleCreate} className="p-1 hover:bg-dark-border rounded">
-                                <Check className="w-4 h-4 text-green-400" />
+                            <button onClick={handleCreate} className="p-1 hover:bg-app-accent-bg rounded">
+                                <Check className="w-4 h-4 text-green-500" />
                             </button>
-                            <button onClick={() => setIsCreating(false)} className="p-1 hover:bg-dark-border rounded">
-                                <X className="w-4 h-4 text-red-400" />
+                            <button onClick={() => setIsCreating(false)} className="p-1 hover:bg-app-accent-bg rounded">
+                                <X className="w-4 h-4 text-red-500" />
                             </button>
                         </div>
                     )}
                 </div>
 
-                {/* Trash Section - Now at the bottom of the scrollable area */}
-                <div className="mt-auto pt-4 border-t border-dark-border/50">
-                    <ul className="space-y-1">
-                        <li>
-                            <button
-                                onClick={() => setTrashView(true)}
-                                className={clsx(
-                                    'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors',
-                                    isTrashView
-                                        ? 'bg-red-600/20 text-red-400'
-                                        : 'text-dark-text hover:bg-dark-border'
-                                )}
-                            >
-                                <Trash className="w-4 h-4 shrink-0" />
-                                <span className="flex-1 truncate text-sm">Trash</span>
-                            </button>
-                        </li>
-                    </ul>
+                {/* Trash Section */}
+                <div className="mt-auto pt-4 border-t border-app-border/50">
+                    <button
+                        onClick={() => setTrashView(true)}
+                        className={clsx(
+                            'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all',
+                            isTrashView
+                                ? 'bg-red-500/10 text-red-500 font-medium'
+                                : 'text-app-text hover:bg-app-accent-bg'
+                        )}
+                    >
+                        <Trash className="w-4 h-4 shrink-0" />
+                        <span className="flex-1 truncate text-sm">Trash</span>
+                    </button>
                 </div>
             </div>
 
             {/* Footer - New Notebook Button */}
-            <div className="p-3 border-t border-dark-border">
+            <div className="p-3 border-t border-app-border bg-app-surface/50">
                 <button
                     onClick={() => setIsCreating(true)}
-                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-dark-border hover:bg-dark-muted/20 text-dark-text text-sm transition-colors"
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-app-primary text-white text-sm font-medium hover:bg-app-primary-hover transition-colors shadow-sm"
                 >
                     <FolderPlus className="w-4 h-4" />
                     New Notebook
