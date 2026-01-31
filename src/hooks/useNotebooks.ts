@@ -1,21 +1,49 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '../lib/supabase';
+import {
+    collection,
+    query,
+    where,
+    orderBy,
+    getDocs,
+    doc,
+    addDoc,
+    updateDoc,
+    deleteDoc,
+    serverTimestamp,
+    Timestamp
+} from 'firebase/firestore';
+import { db, auth } from '../lib/firebase';
 import type { Notebook, NewNotebook } from '../lib/types';
 
-// Fetch all active notebooks for current user
+// Helper to get user's notebooks collection
+const getNotebooksRef = () => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) throw new Error('Not authenticated');
+    return collection(db, 'users', userId, 'notebooks');
+};
+
+// Fetch all active notebooks
 export function useNotebooks() {
     return useQuery({
         queryKey: ['notebooks'],
         queryFn: async (): Promise<Notebook[]> => {
-            const { data, error } = await supabase
-                .from('notebooks')
-                .select('*')
-                .is('deleted_at', null)
-                .order('created_at', { ascending: false });
+            const q = query(
+                getNotebooksRef(),
+                where('deletedAt', '==', null),
+                orderBy('createdAt', 'desc')
+            );
 
-            if (error) throw error;
-            return (data ?? []) as Notebook[];
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(docSnap => ({
+                id: docSnap.id,
+                user_id: auth.currentUser!.uid,
+                title: docSnap.data().title,
+                created_at: (docSnap.data().createdAt as Timestamp).toDate().toISOString(),
+                updated_at: (docSnap.data().updatedAt as Timestamp).toDate().toISOString(),
+                deleted_at: null,
+            })) as Notebook[];
         },
+        enabled: !!auth.currentUser,
     });
 }
 
@@ -24,32 +52,46 @@ export function useTrashedNotebooks() {
     return useQuery({
         queryKey: ['notebooks', 'trashed'],
         queryFn: async (): Promise<Notebook[]> => {
-            const { data, error } = await supabase
-                .from('notebooks')
-                .select('*')
-                .not('deleted_at', 'is', null)
-                .order('deleted_at', { ascending: false });
+            const q = query(
+                getNotebooksRef(),
+                where('deletedAt', '!=', null),
+                orderBy('deletedAt', 'desc')
+            );
 
-            if (error) throw error;
-            return (data ?? []) as Notebook[];
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(docSnap => ({
+                id: docSnap.id,
+                user_id: auth.currentUser!.uid,
+                title: docSnap.data().title,
+                created_at: (docSnap.data().createdAt as Timestamp).toDate().toISOString(),
+                updated_at: (docSnap.data().updatedAt as Timestamp).toDate().toISOString(),
+                deleted_at: (docSnap.data().deletedAt as Timestamp).toDate().toISOString(),
+            })) as Notebook[];
         },
     });
 }
 
-// Create a new notebook
+// Create notebook
 export function useCreateNotebook() {
     const queryClient = useQueryClient();
 
     return useMutation({
         mutationFn: async (notebook: NewNotebook): Promise<Notebook> => {
-            const { data, error } = await supabase
-                .from('notebooks')
-                .insert(notebook as any)
-                .select()
-                .single();
+            const docRef = await addDoc(getNotebooksRef(), {
+                title: notebook.title || 'Untitled',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                deletedAt: null,
+            });
 
-            if (error) throw error;
-            return data as Notebook;
+            return {
+                id: docRef.id,
+                user_id: auth.currentUser!.uid,
+                title: notebook.title || 'Untitled',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                deleted_at: null,
+            };
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['notebooks'] });
@@ -57,21 +99,17 @@ export function useCreateNotebook() {
     });
 }
 
-// Update a notebook
+// Update notebook
 export function useUpdateNotebook() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async ({ id, title }: { id: string; title: string }): Promise<Notebook> => {
-            const { data, error } = await supabase
-                .from('notebooks')
-                .update({ title } as any)
-                .eq('id', id)
-                .select()
-                .single();
-
-            if (error) throw error;
-            return data as Notebook;
+        mutationFn: async ({ id, title }: { id: string; title: string }) => {
+            const docRef = doc(getNotebooksRef(), id);
+            await updateDoc(docRef, {
+                title,
+                updatedAt: serverTimestamp(),
+            });
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['notebooks'] });
@@ -79,24 +117,25 @@ export function useUpdateNotebook() {
     });
 }
 
-// Soft delete a notebook
+// Soft delete notebook
 export function useSoftDeleteNotebook() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (id: string): Promise<void> => {
-            const { error } = await supabase
-                .from('notebooks')
-                .update({ deleted_at: new Date().toISOString() } as any)
-                .eq('id', id);
-
-            if (error) throw error;
+        mutationFn: async (id: string) => {
+            const docRef = doc(getNotebooksRef(), id);
+            await updateDoc(docRef, {
+                deletedAt: serverTimestamp(),
+            });
 
             // Also soft delete all notes in this notebook
-            await supabase
-                .from('notes')
-                .update({ deleted_at: new Date().toISOString() } as any)
-                .eq('notebook_id', id);
+            const notesRef = collection(db, 'users', auth.currentUser!.uid, 'notebooks', id, 'notes');
+            const notesSnapshot = await getDocs(notesRef);
+
+            const deletePromises = notesSnapshot.docs.map(noteDoc =>
+                updateDoc(doc(notesRef, noteDoc.id), { deletedAt: serverTimestamp() })
+            );
+            await Promise.all(deletePromises);
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['notebooks'] });
@@ -105,23 +144,23 @@ export function useSoftDeleteNotebook() {
     });
 }
 
-// Restore a notebook
+// Restore notebook
 export function useRestoreNotebook() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (id: string): Promise<void> => {
-            const { error } = await supabase
-                .from('notebooks')
-                .update({ deleted_at: null } as any)
-                .eq('id', id);
+        mutationFn: async (id: string) => {
+            const docRef = doc(getNotebooksRef(), id);
+            await updateDoc(docRef, { deletedAt: null });
 
-            if (error) throw error;
+            // Also restore all notes
+            const notesRef = collection(db, 'users', auth.currentUser!.uid, 'notebooks', id, 'notes');
+            const notesSnapshot = await getDocs(notesRef);
 
-            await supabase
-                .from('notes')
-                .update({ deleted_at: null } as any)
-                .eq('notebook_id', id);
+            const restorePromises = notesSnapshot.docs.map(noteDoc =>
+                updateDoc(doc(notesRef, noteDoc.id), { deletedAt: null })
+            );
+            await Promise.all(restorePromises);
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['notebooks'] });
@@ -130,18 +169,23 @@ export function useRestoreNotebook() {
     });
 }
 
-// Permanently delete a notebook
+// Permanently delete notebook
 export function usePermanentlyDeleteNotebook() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async (id: string): Promise<void> => {
-            const { error } = await supabase
-                .from('notebooks')
-                .delete()
-                .eq('id', id);
+        mutationFn: async (id: string) => {
+            // First delete all notes in the notebook
+            const notesRef = collection(db, 'users', auth.currentUser!.uid, 'notebooks', id, 'notes');
+            const notesSnapshot = await getDocs(notesRef);
 
-            if (error) throw error;
+            const deletePromises = notesSnapshot.docs.map(noteDoc =>
+                deleteDoc(doc(notesRef, noteDoc.id))
+            );
+            await Promise.all(deletePromises);
+
+            // Then delete the notebook
+            await deleteDoc(doc(getNotebooksRef(), id));
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['notebooks'] });

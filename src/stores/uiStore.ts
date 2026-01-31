@@ -12,13 +12,15 @@ interface UIState {
     sidebarOpen: boolean;
     expandedNotebooks: Set<string>; // IDs of expanded notebooks
     selectedNoteId: string | null;
+    selectedNotebookId: string | null; // Needed for Firebase subcollection queries
+    isTrashView: boolean;
     darkMode: boolean;
     themeColor: ThemeColor;
     settingsOpen: boolean;
 
     toggleSidebar: () => void;
     toggleNotebookExpand: (id: string, forceState?: boolean) => void;
-    selectNote: (id: string | null) => void;
+    selectNote: (noteId: string | null, notebookId?: string | null, isTrash?: boolean) => void;
 
     toggleDarkMode: () => void;
     setDarkMode: (dark: boolean) => void;
@@ -55,6 +57,8 @@ export const useUIStore = create<UIState>()(
             sidebarOpen: true,
             expandedNotebooks: new Set(),
             selectedNoteId: null,
+            selectedNotebookId: null,
+            isTrashView: false,
             darkMode: true,
             themeColor: 'blue',
             settingsOpen: false,
@@ -73,7 +77,11 @@ export const useUIStore = create<UIState>()(
                 return { expandedNotebooks: newSet };
             }),
 
-            selectNote: (id) => set({ selectedNoteId: id }),
+            selectNote: (noteId, notebookId, isTrash = false) => set({
+                selectedNoteId: noteId,
+                selectedNotebookId: notebookId ?? null,
+                isTrashView: isTrash
+            }),
 
             toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
             setDarkMode: (dark) => set({ darkMode: dark }),

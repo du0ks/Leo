@@ -1,57 +1,66 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
-import type { User, Session } from '@supabase/supabase-js';
+import { useState, useEffect } from 'react';
+import {
+    onAuthStateChanged,
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    sendEmailVerification,
+    signOut as firebaseSignOut,
+    User
+} from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 
 export function useAuth() {
     const [user, setUser] = useState<User | null>(null);
-    const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Get initial session
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSession(session);
-            setUser(session?.user ?? null);
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            setUser(user);
             setLoading(false);
         });
 
-        // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            (_event, session) => {
-                setSession(session);
-                setUser(session?.user ?? null);
-                setLoading(false);
-            }
-        );
-
-        return () => subscription.unsubscribe();
+        return () => unsubscribe();
     }, []);
 
     const signIn = async (email: string, password: string) => {
-        const { error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-        });
-        if (error) throw error;
+        const { user } = await signInWithEmailAndPassword(auth, email, password);
+
+        // Check if email is verified
+        if (!user.emailVerified) {
+            await firebaseSignOut(auth);
+            throw new Error('Please verify your email before signing in. Check your inbox for the verification link.');
+        }
     };
 
     const signUp = async (email: string, password: string) => {
-        const { error } = await supabase.auth.signUp({
-            email,
-            password,
+        const { user } = await createUserWithEmailAndPassword(auth, email, password);
+
+        // Send verification email
+        await sendEmailVerification(user);
+
+        // Create user profile in Firestore
+        await setDoc(doc(db, 'users', user.uid), {
+            email: user.email,
+            displayName: null,
+            createdAt: new Date(),
         });
-        if (error) throw error;
+
+        // Sign out until verified
+        await firebaseSignOut(auth);
+
+        return 'Verification email sent! Please check your inbox.';
     };
 
     const signOut = async () => {
-        const { error } = await supabase.auth.signOut();
-        if (error) throw error;
+        await firebaseSignOut(auth);
     };
 
     return {
         user,
-        session,
+        session: user, // For backwards compatibility
         loading,
+        isAuthenticated: !!user && user.emailVerified,
         signIn,
         signUp,
         signOut,
