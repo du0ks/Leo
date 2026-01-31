@@ -341,11 +341,11 @@ function TrashSection() {
             </div>
 
             {isExpanded && (
-                <div className="pl-3 border-l border-red-500/20 ml-2.5 mt-1 space-y-2 animate-fade-in">
+                <div className="pl-3 border-l border-red-500/20 ml-2.5 mt-3 space-y-4 animate-fade-in">
                     {/* Trashed Notebooks */}
                     {trashedNotebooks?.length! > 0 && (
                         <div className="space-y-0.5">
-                            <p className="text-[10px] uppercase tracking-wider text-app-muted font-bold px-2 mb-1">Notebooks</p>
+                            <p className="text-[10px] uppercase tracking-wider text-app-muted font-bold px-2 mb-2">Notebooks</p>
                             {trashedNotebooks?.map((notebook) => (
                                 <div
                                     key={notebook.id}
@@ -385,7 +385,7 @@ function TrashSection() {
                     {/* Trashed Notes */}
                     <div className="space-y-0.5">
                         {trashedNotebooks?.length! > 0 && (
-                            <p className="text-[10px] uppercase tracking-wider text-app-muted font-bold px-2 mb-1">Notes</p>
+                            <p className="text-[10px] uppercase tracking-wider text-app-muted font-bold px-2 mb-2">Notes</p>
                         )}
                         {trashedNotes?.length === 0 && trashedNotebooks?.length === 0 ? (
                             <div className="py-1 pl-2 text-xs text-app-muted italic">Trash is empty</div>
