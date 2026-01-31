@@ -143,7 +143,7 @@ export function Sidebar() {
 
                         {/* Trash Section */}
                         <div className="mt-6 pt-2 border-t border-app-border/50">
-                            <TrashSection />
+                            <WastebasketSection />
                         </div>
                     </div>
                 )}
@@ -313,8 +313,9 @@ function NoteItem({ note }: { note: any }) {
     );
 }
 
-function TrashSection() {
+function WastebasketSection() {
     const [isExpanded, setIsExpanded] = useState(false);
+    const [expandedNotebookIds, setExpandedNotebookIds] = useState<Set<string>>(new Set());
     const { data: trashedNotes } = useTrashedNotes();
     const { data: trashedNotebooks } = useTrashedNotebooks();
 
@@ -326,7 +327,44 @@ function TrashSection() {
     const restoreNotebook = useRestoreNotebook();
     const permDeleteNotebook = usePermanentlyDeleteNotebook();
 
-    const totalTrashed = (trashedNotes?.length ?? 0) + (trashedNotebooks?.length ?? 0);
+    // Get IDs of trashed notebooks
+    const trashedNotebookIds = new Set(trashedNotebooks?.map(nb => nb.id) || []);
+
+    // Filter notes: only show notes whose notebook is NOT trashed (orphan notes)
+    const orphanTrashedNotes = trashedNotes?.filter(note => !trashedNotebookIds.has(note.notebook_id)) || [];
+
+    // Group notes by their trashed notebook
+    const notesByNotebook: Record<string, typeof trashedNotes> = {};
+    trashedNotes?.forEach(note => {
+        if (trashedNotebookIds.has(note.notebook_id)) {
+            if (!notesByNotebook[note.notebook_id]) {
+                notesByNotebook[note.notebook_id] = [];
+            }
+            notesByNotebook[note.notebook_id]!.push(note);
+        }
+    });
+
+    const totalTrashed = (orphanTrashedNotes.length) + (trashedNotebooks?.length ?? 0);
+
+    const toggleNotebookExpand = (id: string) => {
+        setExpandedNotebookIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(id)) newSet.delete(id);
+            else newSet.add(id);
+            return newSet;
+        });
+    };
+
+    const handleClearWastebasket = async () => {
+        if (!confirm("Permanently delete ALL items in the wastebasket? This cannot be undone.")) return;
+
+        for (const nb of trashedNotebooks || []) {
+            await permDeleteNotebook.mutateAsync(nb.id);
+        }
+        for (const note of orphanTrashedNotes) {
+            await permDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+        }
+    };
 
     return (
         <div className="select-none">
@@ -341,105 +379,140 @@ function TrashSection() {
                     {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 </div>
                 <Trash2 size={16} />
-                <span className="flex-1 text-sm font-medium">Trash</span>
+                <span className="flex-1 text-sm font-medium">Wastebasket</span>
                 {totalTrashed > 0 && (
-                    <span className="text-xs bg-app-border px-1.5 rounded-full">{totalTrashed}</span>
+                    <div className="flex items-center gap-1">
+                        <span className="text-xs bg-app-border px-1.5 rounded-full">{totalTrashed}</span>
+                        <button
+                            title="Clear Wastebasket"
+                            onClick={(e) => { e.stopPropagation(); handleClearWastebasket(); }}
+                            className="p-1 text-red-500 hover:bg-red-500/10 rounded"
+                        >
+                            <X size={14} />
+                        </button>
+                    </div>
                 )}
             </div>
 
             {isExpanded && (
-                <div className="pl-3 border-l border-red-500/20 ml-2.5 mt-3 space-y-4 animate-fade-in">
-                    {/* Trashed Notebooks */}
-                    {trashedNotebooks?.length! > 0 && (
-                        <div className="space-y-0.5">
-                            <p className="text-[10px] uppercase tracking-wider text-app-muted font-bold px-2 mb-2">Notebooks</p>
+                <div className="pl-3 border-l border-red-500/20 ml-2.5 mt-3 space-y-2 animate-fade-in">
+                    {totalTrashed === 0 ? (
+                        <div className="py-1 pl-2 text-xs text-app-muted italic">Wastebasket is empty</div>
+                    ) : (
+                        <>
                             {trashedNotebooks?.map((notebook) => (
-                                <div
-                                    key={notebook.id}
-                                    className="group flex items-center gap-2 px-2 py-1.5 rounded-md transition-all text-sm opacity-75 hover:opacity-100 text-app-text/70 hover:bg-app-accent-bg"
-                                >
-                                    <Book size={14} className="text-app-muted" />
-                                    <span className="flex-1 truncate line-through decoration-red-500/50">{notebook.title}</span>
-                                    <div className="flex items-center gap-1 lg:hidden lg:group-hover:flex">
-                                        <button
-                                            title="Restore Notebook"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                restoreNotebook.mutateAsync(notebook.id);
-                                            }}
-                                            className="p-1 text-green-500 hover:bg-green-500/10 rounded"
-                                        >
-                                            <RotateCcw size={12} />
-                                        </button>
-                                        <button
-                                            title="Delete Permanently"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (confirm("Delete notebook and ALL its notes permanently?")) {
-                                                    permDeleteNotebook.mutateAsync(notebook.id);
-                                                }
-                                            }}
-                                            className="p-1 text-red-500 hover:bg-red-500/10 rounded"
-                                        >
-                                            <X size={12} />
-                                        </button>
+                                <div key={notebook.id} className="space-y-0.5">
+                                    <div
+                                        className="group flex items-center gap-2 px-2 py-1.5 rounded-md transition-all text-sm opacity-75 hover:opacity-100 text-app-text/70 hover:bg-app-accent-bg cursor-pointer"
+                                        onClick={() => toggleNotebookExpand(notebook.id)}
+                                    >
+                                        <div className="text-app-muted">
+                                            {expandedNotebookIds.has(notebook.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                        </div>
+                                        <Book size={14} className="text-app-muted" />
+                                        <span className="flex-1 truncate line-through decoration-red-500/50">{notebook.title}</span>
+                                        {notesByNotebook[notebook.id]?.length ? (
+                                            <span className="text-[10px] text-app-muted">{notesByNotebook[notebook.id]?.length}</span>
+                                        ) : null}
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                title="Restore Notebook"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    restoreNotebook.mutateAsync(notebook.id);
+                                                }}
+                                                className="p-1 text-green-500 hover:bg-green-500/10 rounded"
+                                            >
+                                                <RotateCcw size={12} />
+                                            </button>
+                                            <button
+                                                title="Delete Permanently"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (confirm("Delete notebook and ALL its notes permanently?")) {
+                                                        permDeleteNotebook.mutateAsync(notebook.id);
+                                                    }
+                                                }}
+                                                className="p-1 text-red-500 hover:bg-red-500/10 rounded"
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        </div>
                                     </div>
+
+                                    {expandedNotebookIds.has(notebook.id) && notesByNotebook[notebook.id]?.length! > 0 && (
+                                        <div className="pl-5 space-y-0.5">
+                                            {notesByNotebook[notebook.id]?.map((note) => (
+                                                <div
+                                                    key={note.id}
+                                                    className={clsx(
+                                                        "group flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-all text-xs opacity-75 hover:opacity-100",
+                                                        selectedNoteId === note.id
+                                                            ? "bg-red-500/10 text-red-500"
+                                                            : "text-app-text/60 hover:bg-app-accent-bg"
+                                                    )}
+                                                    onClick={() => selectNote(note.id, note.notebook_id, true)}
+                                                >
+                                                    <FileText size={12} className="text-app-muted" />
+                                                    <span className="flex-1 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
-                        </div>
-                    )}
 
-                    {/* Trashed Notes */}
-                    <div className="space-y-0.5">
-                        {trashedNotebooks?.length! > 0 && (
-                            <p className="text-[10px] uppercase tracking-wider text-app-muted font-bold px-2 mb-2">Notes</p>
-                        )}
-                        {trashedNotes?.length === 0 && trashedNotebooks?.length === 0 ? (
-                            <div className="py-1 pl-2 text-xs text-app-muted italic">Trash is empty</div>
-                        ) : (
-                            trashedNotes?.map((note) => (
-                                <div
-                                    key={note.id}
-                                    className={clsx(
-                                        "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-all text-sm opacity-75 hover:opacity-100",
-                                        selectedNoteId === note.id
-                                            ? "bg-red-500/10 text-red-500"
-                                            : "text-app-text/70 hover:bg-app-accent-bg"
+                            {orphanTrashedNotes.length > 0 && (
+                                <div className="space-y-0.5">
+                                    {trashedNotebooks?.length! > 0 && (
+                                        <p className="text-[10px] uppercase tracking-wider text-app-muted font-bold px-2 mt-3 mb-2">Notes</p>
                                     )}
-                                    onClick={() => selectNote(note.id, note.notebook_id, true)}
-                                >
-                                    <FileText size={14} className="text-app-muted" />
-                                    <span className="flex-1 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
-                                    <div className="flex items-center gap-1 lg:hidden lg:group-hover:flex">
-                                        <button
-                                            title="Restore Note"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                restoreNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
-                                            }}
-                                            className="p-1 text-green-500 hover:bg-green-500/10 rounded"
+                                    {orphanTrashedNotes.map((note) => (
+                                        <div
+                                            key={note.id}
+                                            className={clsx(
+                                                "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-all text-sm opacity-75 hover:opacity-100",
+                                                selectedNoteId === note.id
+                                                    ? "bg-red-500/10 text-red-500"
+                                                    : "text-app-text/70 hover:bg-app-accent-bg"
+                                            )}
+                                            onClick={() => selectNote(note.id, note.notebook_id, true)}
                                         >
-                                            <RotateCcw size={12} />
-                                        </button>
-                                        <button
-                                            title="Delete Forever"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (confirm("Delete note permanently?")) {
-                                                    permDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
-                                                }
-                                            }}
-                                            className="p-1 text-red-500 hover:bg-red-500/10 rounded"
-                                        >
-                                            <X size={12} />
-                                        </button>
-                                    </div>
+                                            <FileText size={14} className="text-app-muted" />
+                                            <span className="flex-1 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    title="Restore Note"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        restoreNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+                                                    }}
+                                                    className="p-1 text-green-500 hover:bg-green-500/10 rounded"
+                                                >
+                                                    <RotateCcw size={12} />
+                                                </button>
+                                                <button
+                                                    title="Delete Forever"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (confirm("Delete note permanently?")) {
+                                                            permDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+                                                        }
+                                                    }}
+                                                    className="p-1 text-red-500 hover:bg-red-500/10 rounded"
+                                                >
+                                                    <X size={12} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                            ))
-                        )}
-                    </div>
+                            )}
+                        </>
+                    )}
                 </div>
             )}
         </div>
     );
 }
+
