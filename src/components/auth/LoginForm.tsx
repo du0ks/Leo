@@ -8,25 +8,29 @@ export function LoginForm() {
     const [isSignUp, setIsSignUp] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const { signIn, signUp, loading } = useAuth();
+    const { signIn, signUp } = useAuth();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
         setSuccess(null);
+        setIsSubmitting(true);
 
         try {
             if (isSignUp) {
                 const message = await signUp(email, password);
                 setSuccess(message);
-                // Clear password but keep email for convenience? 
+                // Clear password but keep email for convenience
                 setPassword('');
             } else {
                 await signIn(email, password);
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An error occurred');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -98,11 +102,11 @@ export function LoginForm() {
 
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={isSubmitting}
                             className="w-full relative overflow-hidden group py-3.5 px-4 bg-app-primary hover:bg-app-primary-hover text-white rounded-xl font-medium transition-all shadow-lg shadow-app-primary/25 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
                         >
                             <div className="flex items-center justify-center gap-2 relative z-10">
-                                {loading ? (
+                                {isSubmitting ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
                                 ) : (
                                     <>
