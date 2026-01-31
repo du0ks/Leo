@@ -3,7 +3,7 @@ import '@blocknote/mantine/style.css';
 
 import { useCreateBlockNote } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/mantine';
-import { useEffect, useCallback, useRef, useMemo } from 'react';
+import { useCallback, useRef, useMemo } from 'react';
 import type { Block, PartialBlock } from '@blocknote/core';
 
 interface NoteEditorProps {
@@ -22,9 +22,11 @@ const getDefaultContent = (): PartialBlock[] => [
 
 export function NoteEditor({ content, onChange, editable = true }: NoteEditorProps) {
     const isInitialLoad = useRef(true);
-    const prevContentRef = useRef<unknown>(null);
 
-    // Safely parse initial content
+    // Safely parse initial content.
+    // We rely on the parent component changing the 'key' prop to re-initialize this component
+    // when the user switches notes. This prevents the "jumping cursor" issue because
+    // we don't sync 'content' prop changes into the editor via useEffect.
     const initialContent = useMemo((): PartialBlock[] => {
         if (content && Array.isArray(content) && content.length > 0) {
             return content as PartialBlock[];
@@ -38,47 +40,13 @@ export function NoteEditor({ content, onChange, editable = true }: NoteEditorPro
 
     // Handle content changes from editor
     const handleChange = useCallback(() => {
+        // Skip the first change triggered by initialization
         if (isInitialLoad.current) {
             isInitialLoad.current = false;
             return;
         }
         onChange(editor.document);
     }, [editor, onChange]);
-
-    // Update content when prop changes (e.g., switching notes)
-    useEffect(() => {
-        // Skip if content hasn't actually changed
-        if (prevContentRef.current === content) {
-            return;
-        }
-        prevContentRef.current = content;
-
-        // Only update if we have valid content and it's not the initial load
-        if (content && Array.isArray(content) && content.length > 0) {
-            isInitialLoad.current = true;
-            try {
-                // Get all current block IDs
-                const currentBlockIds = editor.document.map(block => block.id);
-                if (currentBlockIds.length > 0) {
-                    // Replace all existing blocks with new content
-                    editor.replaceBlocks(currentBlockIds, content as PartialBlock[]);
-                }
-            } catch (error) {
-                console.error('Error updating editor content:', error);
-            }
-        } else if (!content || (Array.isArray(content) && content.length === 0)) {
-            // Reset to default content for empty notes
-            isInitialLoad.current = true;
-            try {
-                const currentBlockIds = editor.document.map(block => block.id);
-                if (currentBlockIds.length > 0) {
-                    editor.replaceBlocks(currentBlockIds, getDefaultContent());
-                }
-            } catch (error) {
-                console.error('Error resetting editor content:', error);
-            }
-        }
-    }, [content, editor]);
 
     return (
         <div className="note-editor h-full overflow-auto">

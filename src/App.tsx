@@ -10,6 +10,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { NoteList } from './components/layout/NoteList';
 import { MainView } from './components/layout/MainView';
 import { ThemeToggle } from './components/ui/ThemeToggle';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { LogOut, Menu, Loader2 } from 'lucide-react';
 
 const queryClient = new QueryClient({
@@ -105,10 +106,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <MantineProvider>
-        <AppContent />
-      </MantineProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <MantineProvider>
+          <AppContent />
+        </MantineProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

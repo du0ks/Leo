@@ -1,11 +1,11 @@
-/* App-wide premium styling */
+/* App-wide premium styling - Dark Red Theme */
 
 /* Glassmorphism and modern effects */
 .glass-panel {
-    background: rgba(30, 41, 59, 0.8);
+    background: rgba(45, 22, 22, 0.8);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(51, 65, 85, 0.5);
+    border: 1px solid rgba(74, 35, 35, 0.5);
 }
 
 /* Smooth transitions for all interactive elements */
@@ -33,32 +33,32 @@ button:active:not(:disabled) {
 
 /* Subtle gradient backgrounds */
 .gradient-bg {
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    background: linear-gradient(135deg, #1a0b0b 0%, #2d1616 100%);
 }
 
 /* Accent glow effect */
 .glow-accent {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.15);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
 }
 
 /* Sidebar styling enhancements */
 .sidebar-item:hover {
-    background: rgba(51, 65, 85, 0.5);
+    background: rgba(74, 35, 35, 0.5);
 }
 
 .sidebar-item.active {
-    background: rgba(59, 130, 246, 0.15);
-    border-left: 2px solid #3b82f6;
+    background: rgba(239, 68, 68, 0.15);
+    border-left: 2px solid #ef4444;
 }
 
 /* Input field styling */
 input[type="text"],
 input[type="email"],
 input[type="password"] {
-    background: rgba(15, 23, 42, 0.8);
-    border: 1px solid rgba(51, 65, 85, 0.8);
+    background: rgba(26, 11, 11, 0.8);
+    border: 1px solid rgba(74, 35, 35, 0.8);
     border-radius: 8px;
-    color: #f1f5f9;
+    color: #fcebeb;
     padding: 0.75rem 1rem;
     transition: border-color 0.2s, box-shadow 0.2s;
 }
@@ -66,19 +66,19 @@ input[type="password"] {
 input[type="text"]:focus,
 input[type="email"]:focus,
 input[type="password"]:focus {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
     outline: none;
 }
 
 input::placeholder {
-    color: #64748b;
+    color: #a67d7d;
 }
 
 /* Card styling */
 .card {
-    background: rgba(30, 41, 59, 0.6);
-    border: 1px solid rgba(51, 65, 85, 0.5);
+    background: rgba(45, 22, 22, 0.6);
+    border: 1px solid rgba(74, 35, 35, 0.5);
     border-radius: 12px;
     padding: 1.5rem;
 }
