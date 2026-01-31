@@ -5,18 +5,56 @@ import {
     createUserWithEmailAndPassword,
     sendEmailVerification,
     signOut as firebaseSignOut,
-    User
+    User,
+    AuthError
 } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+
+// Convert Firebase error codes to user-friendly messages
+function getAuthErrorMessage(error: AuthError): string {
+    switch (error.code) {
+        // Email errors
+        case 'auth/invalid-email':
+            return 'Please enter a valid email address.';
+        case 'auth/email-already-in-use':
+            return 'This email is already registered. Try signing in instead.';
+        case 'auth/user-not-found':
+            return 'No account found with this email. Please sign up first.';
+
+        // Password errors
+        case 'auth/weak-password':
+            return 'Password must be at least 6 characters long.';
+        case 'auth/wrong-password':
+            return 'Incorrect password. Please try again.';
+
+        // Account errors
+        case 'auth/user-disabled':
+            return 'This account has been disabled. Contact support for help.';
+        case 'auth/too-many-requests':
+            return 'Too many failed attempts. Please wait a moment and try again.';
+
+        // Network errors
+        case 'auth/network-request-failed':
+            return 'Network error. Please check your internet connection.';
+
+        // Credential errors
+        case 'auth/invalid-credential':
+            return 'Invalid email or password. Please check and try again.';
+
+        // Default fallback
+        default:
+            return 'Something went wrong. Please try again.';
+    }
+}
 
 export function useAuth() {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
-            setUser(user);
+        const unsubscribe = onAuthStateChanged(auth, (firebaseUser: User | null) => {
+            setUser(firebaseUser);
             setLoading(false);
         });
 
@@ -24,34 +62,48 @@ export function useAuth() {
     }, []);
 
     const signIn = async (email: string, password: string) => {
-        const { user } = await signInWithEmailAndPassword(auth, email, password);
+        try {
+            const { user } = await signInWithEmailAndPassword(auth, email, password);
 
-        // Check if email is verified
-        if (!user.emailVerified) {
-            await firebaseSignOut(auth);
-            throw new Error('Please verify your email before signing in. Check your inbox for the verification link.');
+            // Check if email is verified
+            if (!user.emailVerified) {
+                await firebaseSignOut(auth);
+                throw new Error('Please verify your email before signing in. Check your inbox for the verification link.');
+            }
+        } catch (error) {
+            // Re-throw our custom errors as-is
+            if (error instanceof Error && !('code' in error)) {
+                throw error;
+            }
+            // Convert Firebase errors to friendly messages
+            throw new Error(getAuthErrorMessage(error as AuthError));
         }
     };
 
     const signUp = async (email: string, password: string) => {
-        const { user } = await createUserWithEmailAndPassword(auth, email, password);
+        try {
+            const { user } = await createUserWithEmailAndPassword(auth, email, password);
 
-        // Send verification email
-        await sendEmailVerification(user);
+            // Send verification email
+            await sendEmailVerification(user);
 
-        // Create user profile in Firestore
-        await setDoc(doc(db, 'users', user.uid), {
-            email: user.email,
-            displayName: null,
-            createdAt: new Date(),
-            darkMode: true,
-            themeColor: 'blue',
-        });
+            // Create user profile in Firestore
+            await setDoc(doc(db, 'users', user.uid), {
+                email: user.email,
+                displayName: null,
+                createdAt: new Date(),
+                darkMode: true,
+                themeColor: 'yellow',
+            });
 
-        // Sign out until verified
-        await firebaseSignOut(auth);
+            // Sign out until verified
+            await firebaseSignOut(auth);
 
-        return 'Verification email sent! Please check your inbox.';
+            return 'Verification email sent! Please check your inbox.';
+        } catch (error) {
+            // Convert Firebase errors to friendly messages
+            throw new Error(getAuthErrorMessage(error as AuthError));
+        }
     };
 
     const signOut = async () => {
