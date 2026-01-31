@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import clsx from 'clsx';
 import { Sparkles, ArrowRight, Mail, Lock, Loader2 } from 'lucide-react';
 
 export function LoginForm() {
