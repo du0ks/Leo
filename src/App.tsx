@@ -24,7 +24,7 @@ const queryClient = new QueryClient({
 });
 
 function AppContent() {
-  const { user, loading, signOut } = useAuth();
+  const { loading, signOut, isAuthenticated } = useAuth();
   const {
     darkMode,
     themeColor,
@@ -54,7 +54,8 @@ function AppContent() {
     );
   }
 
-  if (!user) {
+  // Use isAuthenticated which checks both user existence AND email verification
+  if (!isAuthenticated) {
     return <LoginForm />;
   }
 
