@@ -66,8 +66,8 @@ function AppContent() {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center backdrop-blur-sm">
-              <Book className="w-5 h-5 text-white dark:text-app-primary" />
+            <div className="w-8 h-8 rounded-lg bg-app-primary/10 flex items-center justify-center backdrop-blur-sm">
+              <Book className="w-5 h-5 text-app-primary" />
             </div>
             <h1 className="text-xl font-bold tracking-tight">Leo</h1>
           </div>
