@@ -1,6 +1,7 @@
-import { Modal, Switch, SimpleGrid, Text, Group, Stack, Divider, ActionIcon } from '@mantine/core';
-import { useUIStore, ThemeColor } from '../../stores/uiStore';
+import { ActionIcon, Divider, Group, Modal, SimpleGrid, Stack, Switch, Text } from '@mantine/core';
 import { Check, Moon, Sun } from 'lucide-react';
+import { useUIStore, ThemeColor } from '../../stores/uiStore';
+import { useUserSettings } from '../../hooks/useUserSettings';
 import clsx from 'clsx';
 
 
@@ -24,6 +25,18 @@ export function SettingsModal() {
         themeColor,
         setThemeColor
     } = useUIStore();
+
+    const { updateSettings } = useUserSettings();
+
+    const handleDarkModeChange = (checked: boolean) => {
+        setDarkMode(checked);
+        updateSettings.mutate({ darkMode: checked });
+    };
+
+    const handleThemeColorChange = (color: ThemeColor) => {
+        setThemeColor(color);
+        updateSettings.mutate({ themeColor: color });
+    };
 
     return (
         <Modal
@@ -75,7 +88,7 @@ export function SettingsModal() {
                         </Group>
                         <Switch
                             checked={darkMode}
-                            onChange={(event) => setDarkMode(event.currentTarget.checked)}
+                            onChange={(event) => handleDarkModeChange(event.currentTarget.checked)}
                             size="md"
                             color="var(--primary)"
                         />
@@ -91,7 +104,7 @@ export function SettingsModal() {
                                     variant="filled"
                                     size="xl"
                                     radius="md"
-                                    onClick={() => setThemeColor(name)}
+                                    onClick={() => handleThemeColorChange(name)}
                                     className={clsx(
                                         "transition-all duration-200 ring-offset-2 ring-offset-app-surface",
                                         themeColor === name && "ring-2 ring-app-primary scale-110"
