@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import * as React from 'react';
 import {
     collection,
     query,
@@ -8,7 +9,8 @@ import {
     updateDoc,
     deleteDoc,
     serverTimestamp,
-    Timestamp
+    Timestamp,
+    onSnapshot
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import type { Notebook, NewNotebook } from '../lib/types';
@@ -20,12 +22,15 @@ const getNotebooksRef = () => {
     return collection(db, 'users', userId, 'notebooks');
 };
 
-// Fetch all active notebooks
+// Fetch all active notebooks with real-time sync
 export function useNotebooks() {
-    return useQuery({
+    const queryClient = useQueryClient();
+    const userId = auth.currentUser?.uid;
+
+    const { data, ...queryResult } = useQuery({
         queryKey: ['notebooks'],
         queryFn: async (): Promise<Notebook[]> => {
-            const q = query(getNotebooksRef()); // Simplified to avoid index errors
+            const q = query(getNotebooksRef());
             const snapshot = await getDocs(q);
 
             return snapshot.docs
@@ -40,11 +45,42 @@ export function useNotebooks() {
                         deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
                     };
                 })
-                .filter(nb => nb.deleted_at === null) // Client-side filtering
+                .filter(nb => nb.deleted_at === null)
                 .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) as Notebook[];
         },
-        enabled: !!auth.currentUser,
+        enabled: !!userId,
+        staleTime: Infinity
     });
+
+    React.useEffect(() => {
+        if (!userId) return;
+
+        const q = query(getNotebooksRef());
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const notebooks = snapshot.docs
+                .map(docSnap => {
+                    const data = docSnap.data({ serverTimestamps: 'estimate' });
+                    return {
+                        id: docSnap.id,
+                        user_id: userId,
+                        title: data.title,
+                        created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                        updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                        deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
+                    };
+                })
+                .filter(nb => nb.deleted_at === null)
+                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) as Notebook[];
+
+            queryClient.setQueryData(['notebooks'], notebooks);
+        }, (error) => {
+            console.error("Error in notebooks snapshot listener:", error);
+        });
+
+        return () => unsubscribe();
+    }, [userId, queryClient]);
+
+    return { data, ...queryResult };
 }
 
 // Fetch trashed notebooks

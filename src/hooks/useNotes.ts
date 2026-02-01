@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import * as React from 'react';
 import {
     collection,
     query,
@@ -9,7 +10,8 @@ import {
     updateDoc,
     deleteDoc,
     serverTimestamp,
-    Timestamp
+    Timestamp,
+    onSnapshot
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import type { Note, NewNote } from '../lib/types';
@@ -21,14 +23,18 @@ const getNotesRef = (notebookId: string) => {
     return collection(db, 'users', userId, 'notebooks', notebookId, 'notes');
 };
 
-// Fetch notes for a specific notebook
+// Fetch notes for a specific notebook with real-time sync
 export function useNotes(notebookId: string | null) {
-    return useQuery({
+    const queryClient = useQueryClient();
+    const userId = auth.currentUser?.uid;
+
+    // Use useQuery for the data structure and initial state
+    const { data, ...queryResult } = useQuery({
         queryKey: ['notes', notebookId],
         queryFn: async (): Promise<Note[]> => {
-            const q = query(getNotesRef(notebookId!)); // No filters to avoid index requirement
+            // Initial fetch is still useful for loading state, but onSnapshot handles updates
+            const q = query(getNotesRef(notebookId!));
             const snapshot = await getDocs(q);
-
             return snapshot.docs
                 .map(docSnap => {
                     const data = docSnap.data({ serverTimestamps: 'estimate' });
@@ -45,8 +51,41 @@ export function useNotes(notebookId: string | null) {
                 .filter(n => n.deleted_at === null)
                 .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()) as Note[];
         },
-        enabled: !!notebookId && !!auth.currentUser,
+        enabled: !!notebookId && !!userId,
+        staleTime: Infinity, // Rely on snapshot updates
     });
+
+    // Real-time subscription
+    React.useEffect(() => {
+        if (!notebookId || !userId) return;
+
+        const q = query(getNotesRef(notebookId));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const notes = snapshot.docs
+                .map(docSnap => {
+                    const data = docSnap.data({ serverTimestamps: 'estimate' });
+                    return {
+                        id: docSnap.id,
+                        notebook_id: notebookId,
+                        title: data.title,
+                        content: data.content,
+                        created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                        updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                        deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
+                    };
+                })
+                .filter(n => n.deleted_at === null)
+                .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()) as Note[];
+
+            queryClient.setQueryData(['notes', notebookId], notes);
+        }, (error) => {
+            console.error("Error in notes snapshot listener:", error);
+        });
+
+        return () => unsubscribe();
+    }, [notebookId, userId, queryClient]);
+
+    return { data, ...queryResult };
 }
 
 // Fetch trashed notes across all notebooks
@@ -94,8 +133,12 @@ export function useTrashedNotes() {
 }
 
 // Fetch a single note
+// Fetch a single note
 export function useNote(noteId: string | null, notebookId?: string | null) {
-    return useQuery({
+    const queryClient = useQueryClient();
+    const userId = auth.currentUser?.uid;
+
+    const { data, ...queryResult } = useQuery({
         queryKey: ['note', noteId],
         queryFn: async (): Promise<Note | null> => {
             if (!noteId || !notebookId) return null;
@@ -115,8 +158,37 @@ export function useNote(noteId: string | null, notebookId?: string | null) {
                 deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
             } as Note;
         },
-        enabled: !!noteId && !!notebookId && !!auth.currentUser,
+        enabled: !!noteId && !!notebookId && !!userId,
+        staleTime: Infinity,
     });
+
+    React.useEffect(() => {
+        if (!noteId || !notebookId || !userId) return;
+
+        const docRef = doc(getNotesRef(notebookId), noteId);
+        const unsubscribe = onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data({ serverTimestamps: 'estimate' });
+                const updatedNote = {
+                    id: docSnap.id,
+                    notebook_id: notebookId,
+                    title: data.title,
+                    content: data.content,
+                    created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                    updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
+                    deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
+                } as Note;
+
+                queryClient.setQueryData(['note', noteId], updatedNote);
+            }
+        }, (error) => {
+            console.error("Error in note snapshot listener:", error);
+        });
+
+        return () => unsubscribe();
+    }, [noteId, notebookId, userId, queryClient]);
+
+    return { data, ...queryResult };
 }
 
 // Mutations
