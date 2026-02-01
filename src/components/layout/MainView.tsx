@@ -159,7 +159,7 @@ export function MainView() {
                         {!isOnline ? (
                             <div className="group relative flex items-center justify-center">
                                 <AlertCircle className="w-5 h-5 text-red-500" />
-                                <div className="absolute top-full mt-2 right-0 w-max px-3 py-1.5 bg-red-500 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10 pointer-events-none">
+                                <div className="absolute top-full mt-2 right-0 w-max px-3 py-1.5 bg-red-700 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10 pointer-events-none">
                                     Offline - Changes will sync when online
                                 </div>
                             </div>
