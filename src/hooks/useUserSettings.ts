@@ -12,14 +12,19 @@ interface UserSettings {
 export function useUserSettings() {
     const queryClient = useQueryClient();
     const userId = auth.currentUser?.uid;
-    const { setDarkMode, setThemeColor } = useUIStore();
 
-    const { data: settings, isLoading } = useQuery({
+    // Get current values from Zustand store (already loaded from localStorage - instant!)
+    const { darkMode, themeColor, setDarkMode, setThemeColor } = useUIStore();
+
+    // Background sync from Firestore - doesn't block UI
+    const { data: settings } = useQuery({
         queryKey: ['settings', userId],
         queryFn: async (): Promise<UserSettings | null> => {
             if (!userId) return null;
+            console.time('⚙️ Firestore Settings Fetch');
             const docRef = doc(db, 'users', userId);
             const snapshot = await getDoc(docRef);
+            console.timeEnd('⚙️ Firestore Settings Fetch');
             if (snapshot.exists()) {
                 const data = snapshot.data();
                 return {
@@ -30,9 +35,13 @@ export function useUserSettings() {
             return null;
         },
         enabled: !!userId,
+        // Don't refetch aggressively - we have local cache
+        staleTime: 1000 * 60 * 5, // 5 minutes
+        // Don't retry too much if offline
+        retry: 1,
     });
 
-    // Sync from Firestore to Zustand Store on load
+    // Sync from Firestore to Zustand Store when data arrives (background)
     useEffect(() => {
         if (settings) {
             setDarkMode(settings.darkMode);
@@ -54,5 +63,10 @@ export function useUserSettings() {
         },
     });
 
-    return { settings, isLoading, updateSettings };
+    // Return immediately with Zustand values - NEVER block UI on Firestore
+    return {
+        settings: settings ?? { darkMode, themeColor },
+        isLoading: false, // Never block - we always have cached settings
+        updateSettings
+    };
 }
