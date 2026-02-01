@@ -75,8 +75,11 @@ function AppContent() {
           >
             <Menu className="w-5 h-5" />
           </button>
-          <h1 className="text-xl font-bold tracking-tight">Leo</h1>
-          <img src="/leo.png" alt="Leo Logo" className="w-8 h-8 object-contain rounded-lg" />
+
+          <div className="flex items-center gap-2 ml-2">
+            <img src="/leo.png" alt="Leo Logo" className="w-7 h-7 object-contain rounded-lg" />
+            <h1 className="text-xl font-bold tracking-tight">Leo</h1>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
