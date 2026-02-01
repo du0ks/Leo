@@ -1,11 +1,18 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Save, Loader2, RotateCcw, Trash2 } from 'lucide-react';
+
 import { useNote, useUpdateNote, useRestoreNote, usePermanentlyDeleteNote } from '../../hooks/useNotes';
 import { useUIStore } from '../../stores/uiStore';
 import { NoteEditor } from '../editor/NoteEditor';
 import type { Block } from '@blocknote/core';
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import clsx from 'clsx';
+import {
+    Loader2,
+    RotateCcw,
+    Trash2,
+    AlertCircle
+} from 'lucide-react';
 
 export function MainView() {
     const { selectedNoteId, selectedNotebookId, isTrashView } = useUIStore();
@@ -13,6 +20,7 @@ export function MainView() {
     const updateNote = useUpdateNote();
     const restoreNote = useRestoreNote();
     const permanentlyDeleteNote = usePermanentlyDeleteNote();
+    const isOnline = useOnlineStatus();
 
     const [title, setTitle] = useState('');
     const [isSaving, setIsSaving] = useState(false);
@@ -147,15 +155,19 @@ export function MainView() {
                         </button>
                     </div>
                 ) : (
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-app-accent-bg text-app-primary border border-app-primary/10">
-                        {isSaving || updateNote.isPending ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <div className="flex items-center gap-2 px-2" title="Sync Status">
+                        {!isOnline ? (
+                            <div className="group relative flex items-center justify-center">
+                                <AlertCircle className="w-5 h-5 text-red-500" />
+                                <div className="absolute top-full mt-2 right-0 w-max px-3 py-1.5 bg-red-500 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10 pointer-events-none">
+                                    Offline - Changes will sync when online
+                                </div>
+                            </div>
+                        ) : (isSaving || updateNote.isPending) ? (
+                            <Loader2 className="w-4 h-4 text-app-primary animate-spin" />
                         ) : (
-                            <Save className="w-3.5 h-3.5" />
+                            <div className="w-2.5 h-2.5 rounded-full bg-green-500" title="All changes saved" />
                         )}
-                        <span className="text-[10px] font-bold uppercase tracking-wider">
-                            {(isSaving || updateNote.isPending) ? 'Saving' : 'Saved'}
-                        </span>
                     </div>
                 )}
             </div>
