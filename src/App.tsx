@@ -33,7 +33,8 @@ function AppContent() {
     setSettingsOpen
   } = useUIStore();
 
-  const { isLoading: settingsLoading } = useUserSettings();
+  // Trigger background settings sync (never blocks - uses cached Zustand values)
+  useUserSettings();
 
   // Apply theme classes and attributes
   useEffect(() => {
@@ -55,19 +56,12 @@ function AppContent() {
     );
   }
 
-  // Show login form if not authenticated (don't check settingsLoading here to prevent remount)
+  // Show login form if not authenticated
   if (!isAuthenticated) {
     return <LoginForm />;
   }
 
-  // Only show settings loading for authenticated users
-  if (settingsLoading) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-app-bg text-app-text">
-        <Loader2 className="w-8 h-8 animate-spin text-app-primary" />
-      </div>
-    );
-  }
+  // No more settings loading spinner - go straight to main UI!
 
   return (
     <div className="h-screen flex flex-col bg-app-bg text-app-text overflow-hidden transition-colors duration-300">

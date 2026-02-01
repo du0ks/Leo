@@ -63,7 +63,9 @@ export function useAuth() {
 
     const signIn = async (email: string, password: string) => {
         try {
+            console.time('🔐 Firebase Auth');
             const { user } = await signInWithEmailAndPassword(auth, email, password);
+            console.timeEnd('🔐 Firebase Auth');
 
             // Check if email is verified
             if (!user.emailVerified) {
