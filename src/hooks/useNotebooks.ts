@@ -46,7 +46,7 @@ export function useNotebooks() {
                     };
                 })
                 .filter(nb => nb.deleted_at === null)
-                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) as Notebook[];
+                .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })) as Notebook[];
         },
         enabled: !!userId,
         staleTime: Infinity
@@ -70,7 +70,7 @@ export function useNotebooks() {
                     };
                 })
                 .filter(nb => nb.deleted_at === null)
-                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) as Notebook[];
+                .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })) as Notebook[];
 
             queryClient.setQueryData(['notebooks'], notebooks);
         }, (error) => {
