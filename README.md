@@ -1,6 +1,4 @@
 <div align="center">
-  <img src="assets/banner.png" alt="Leo Banner" width="100%">
-
   # 🦁 LEO
   ### Organize. Clarify. Create.
 
@@ -22,9 +20,30 @@
 - **📦 Block-Based Editing**: powered by [BlockNote](https://www.blocknotejs.org/), offering a Notion-like experience with blocks for text, images, lists, and more.
 - **⚡ Native Performance**: Built with **Tauri**, providing a lightweight and blazing-fast desktop experience on Windows, macOS, and Linux.
 - **🔄 Real-time Sync**: Seamless data synchronization across devices using **Firebase**, ensuring your notes are always up to date.
-- **🎨 Premium UI/UX**: A stunning, modern interface built with **Mantine** and **Tailwind CSS**, featuring dark mode, glassmorphism, and smooth transitions.
+- **🎨 Premium UI/UX**: A stunning, modern interface built with **Mantine** and **Tailwind CSS**, featuring glassmorphism and smooth transitions.
 - **📱 PWA Support**: Install Leo as a Progressive Web App for a consistent experience on mobile and web.
 - **🔒 Secure & Private**: Your data is yours. Enterprise-grade security via Firebase Authentication and Firestore.
+
+<hr />
+
+## 🎨 Themes
+
+Leo is designed to be as easy on the eyes as it is on the mind. Choose from a variety of handcrafted themes to suit your workspace vibe:
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center"><b>Pure Light</b></td>
+      <td align="center"><b>Deep Purple (Dark)</b></td>
+      <td align="center"><b>Forest / Sepia</b></td>
+    </tr>
+    <tr>
+      <td><img src="assets/theme_light.png" width="300" style="border-radius: 8px;"></td>
+      <td><img src="assets/theme_dark.png" width="300" style="border-radius: 8px;"></td>
+      <td><img src="assets/theme_forest.png" width="300" style="border-radius: 8px;"></td>
+    </tr>
+  </table>
+</div>
 
 <hr />
 
@@ -48,15 +67,6 @@
 
 <hr />
 
-## 📸 Gallery
-
-<div align="center">
-  <img src="assets/mockup.png" alt="Leo UI Mockup" width="85%" style="border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-  <p><i>The Leo workspace: Focused, organized, and beautiful.</i></p>
-</div>
-
-<hr />
-
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -69,8 +79,8 @@
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/leo.git
-   cd leo
+   git clone https://github.com/du0ks/Leo.git
+   cd Leo
    ```
 
 2. **Install dependencies**
@@ -123,5 +133,5 @@ Distributed under the MIT License. See `LICENSE` for more information.
 <hr />
 
 <div align="center">
-  Made with ❤️ by [Onat](https://github.com/onat)
+  Made with ❤️ by [du0ks](https://github.com/du0ks)
 </div>
