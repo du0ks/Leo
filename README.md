@@ -42,7 +42,19 @@ Leo is designed to be as easy on the eyes as it is on the mind. Choose from a va
       <td><img src="assets/theme_dark.png" width="300" style="border-radius: 8px;"></td>
       <td><img src="assets/theme_forest.png" width="300" style="border-radius: 8px;"></td>
     </tr>
+    <tr>
+      <td align="center"><b>Emerald Green</b></td>
+      <td align="center"><b>Rose Pink</b></td>
+      <td align="center"><b>Sky Blue</b></td>
+    </tr>
+    <tr>
+      <td><img src="assets/theme_green.png" width="300" style="border-radius: 8px;"></td>
+      <td><img src="assets/theme_pink.png" width="300" style="border-radius: 8px;"></td>
+      <td><img src="assets/theme_lightblue.png" width="300" style="border-radius: 8px;"></td>
+    </tr>
   </table>
+
+  <p><i>...and many more customization options available in settings!</i></p>
 </div>
 
 <hr />
