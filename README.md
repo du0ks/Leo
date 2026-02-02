@@ -33,7 +33,7 @@ Leo is designed to be as easy on the eyes as it is on the mind. Choose from a va
 <div align="center">
   <table>
     <tr>
-      <td align="center"><b>Pure Light</b></td>
+      <td align="center"><b>Purple Light</b></td>
       <td align="center"><b>Deep Purple (Dark)</b></td>
       <td align="center"><b>Forest / Sepia</b></td>
     </tr>
