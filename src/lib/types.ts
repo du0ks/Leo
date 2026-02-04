@@ -10,6 +10,7 @@ export interface Notebook {
     id: string;
     user_id: string;
     title: string;
+    parent_notebook_id: string | null; // null = root notebook, string = sub-notebook
     created_at: string;
     updated_at: string;
     deleted_at: string | null; // Soft delete timestamp
@@ -28,6 +29,7 @@ export interface Note {
 export interface NewNotebook {
     user_id: string;
     title?: string;
+    parent_notebook_id?: string | null; // For creating sub-notebooks
 }
 
 export interface NewNote {

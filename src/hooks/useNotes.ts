@@ -318,3 +318,50 @@ export function usePermanentlyDeleteNote() {
         },
     });
 }
+
+// Move note to a different notebook
+export function useMoveNote() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({
+            id,
+            fromNotebookId,
+            toNotebookId
+        }: {
+            id: string;
+            fromNotebookId: string;
+            toNotebookId: string;
+        }) => {
+            // Get the original note data
+            const oldDocRef = doc(getNotesRef(fromNotebookId), id);
+            const oldDocSnap = await getDoc(oldDocRef);
+
+            if (!oldDocSnap.exists()) {
+                throw new Error('Note not found');
+            }
+
+            const noteData = oldDocSnap.data();
+
+            // Create note in new notebook
+            const newDocRef = await addDoc(getNotesRef(toNotebookId), {
+                ...noteData,
+                updatedAt: serverTimestamp(),
+            });
+
+            // Delete from old notebook
+            await deleteDoc(oldDocRef);
+
+            return {
+                oldId: id,
+                newId: newDocRef.id,
+                fromNotebookId,
+                toNotebookId
+            };
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['notes', data.fromNotebookId] });
+            queryClient.invalidateQueries({ queryKey: ['notes', data.toNotebookId] });
+        },
+    });
+}
