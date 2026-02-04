@@ -440,8 +440,11 @@ function NotebookItem({
                     <Book size={16} className="text-app-primary/80 flex-shrink-0" />
                 )}
 
-                {/* Title */}
-                <span className="flex-1 text-sm font-medium truncate">{notebook.title}</span>
+                {/* Title - only truncate when expanded (icons visible) */}
+                <span className={clsx(
+                    "flex-1 text-sm font-medium",
+                    isExpanded && "truncate"
+                )}>{notebook.title}</span>
 
                 {/* Action Buttons */}
                 <div className={clsx(
@@ -613,7 +616,10 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
                 "flex-shrink-0",
                 selectedNoteId === note.id ? "text-app-primary" : "text-app-muted group-hover:text-app-text"
             )} />
-            <span className="flex-1 truncate">{note.title || 'Untitled'}</span>
+            <span className={clsx(
+                "flex-1",
+                selectedNoteId === note.id && "truncate"
+            )}>{note.title || 'Untitled'}</span>
             <button
                 className={clsx(
                     "p-1 text-app-muted hover:text-red-500 transition-all",
