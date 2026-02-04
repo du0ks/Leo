@@ -1,10 +1,5 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-// import { enableMapSet } from 'immer';
-
-// Allow Map/Set in Immer (if we used immer, but zustand/persist handles simpler types better. 
-// Sets don't persist well in JSON without transformation. 
-// I'll use an Array for 'expandedNotebooks' in the persisted state to be safe).
 
 export type ThemeColor = 'blue' | 'red' | 'yellow' | 'green' | 'grey' | 'black' | 'purple' | 'pink';
 
@@ -18,9 +13,17 @@ interface UIState {
     themeColor: ThemeColor;
     settingsOpen: boolean;
 
+    // Breadcrumb navigation for nested notebooks
+    currentNotebookPath: string[]; // Array of notebook IDs from root to current
+
     toggleSidebar: () => void;
     toggleNotebookExpand: (id: string, forceState?: boolean) => void;
     selectNote: (noteId: string | null, notebookId?: string | null, isTrash?: boolean) => void;
+
+    // Breadcrumb navigation
+    navigateIntoNotebook: (notebookId: string) => void;
+    navigateToPathIndex: (index: number) => void;
+    navigateToRoot: () => void;
 
     toggleDarkMode: () => void;
     setDarkMode: (dark: boolean) => void;
@@ -38,6 +41,7 @@ const storage = {
             state: {
                 ...state,
                 expandedNotebooks: new Set(state.expandedNotebooks || []),
+                currentNotebookPath: state.currentNotebookPath || [],
             },
         };
     },
@@ -45,6 +49,7 @@ const storage = {
         const serializedState = {
             ...value.state,
             expandedNotebooks: Array.from(value.state.expandedNotebooks),
+            currentNotebookPath: value.state.currentNotebookPath || [],
         };
         localStorage.setItem(name, JSON.stringify({ state: serializedState }));
     },
@@ -62,6 +67,7 @@ export const useUIStore = create<UIState>()(
             darkMode: true,
             themeColor: 'yellow',
             settingsOpen: false,
+            currentNotebookPath: [],
 
             toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 
@@ -83,6 +89,27 @@ export const useUIStore = create<UIState>()(
                 isTrashView: isTrash
             }),
 
+            // Navigate into a notebook (push to path)
+            navigateIntoNotebook: (notebookId) => set((state) => ({
+                currentNotebookPath: [...state.currentNotebookPath, notebookId],
+                selectedNoteId: null, // Clear note selection when navigating
+                selectedNotebookId: null,
+            })),
+
+            // Navigate to a specific index in the path (for breadcrumb clicks)
+            navigateToPathIndex: (index) => set((state) => ({
+                currentNotebookPath: state.currentNotebookPath.slice(0, index + 1),
+                selectedNoteId: null,
+                selectedNotebookId: null,
+            })),
+
+            // Navigate back to root
+            navigateToRoot: () => set({
+                currentNotebookPath: [],
+                selectedNoteId: null,
+                selectedNotebookId: null,
+            }),
+
             toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
             setDarkMode: (dark) => set({ darkMode: dark }),
             setThemeColor: (color) => set({ themeColor: color }),
@@ -90,7 +117,7 @@ export const useUIStore = create<UIState>()(
         }),
         {
             name: 'leo-ui-storage',
-            storage: storage, // Use custom storage
+            storage: storage,
         }
     )
 );
