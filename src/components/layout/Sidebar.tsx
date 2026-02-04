@@ -33,7 +33,7 @@ import type { Notebook, Note } from '../../lib/types';
 import {
     DndContext,
     DragOverlay,
-    PointerSensor,
+    MouseSensor,
     TouchSensor,
     useSensor,
     useSensors,
@@ -41,6 +41,7 @@ import {
     DragEndEvent,
 } from '@dnd-kit/core';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
+import { snapCenterToCursor } from '@dnd-kit/modifiers';
 
 // Types for drag items
 type DragItemType = 'note' | 'notebook';
@@ -72,17 +73,17 @@ export function Sidebar() {
     const moveNotebook = useMoveNotebook();
     const moveNote = useMoveNote();
 
-    // Sensors for drag and drop - smoother settings
+    // Sensors for drag and drop - optimized for responsiveness
     const sensors = useSensors(
-        useSensor(PointerSensor, {
+        useSensor(MouseSensor, {
             activationConstraint: {
-                distance: 10, // 10px movement before drag starts
+                distance: 8, // 8px movement before drag starts (desktop)
             },
         }),
         useSensor(TouchSensor, {
             activationConstraint: {
-                delay: 200, // 200ms long press on mobile
-                tolerance: 8,
+                delay: 150, // 150ms long press on mobile (faster response)
+                tolerance: 5,
             },
         })
     );
@@ -196,6 +197,7 @@ export function Sidebar() {
     return (
         <DndContext
             sensors={sensors}
+            modifiers={[snapCenterToCursor]}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
         >
@@ -289,17 +291,20 @@ export function Sidebar() {
                 </div>
             </div>
 
-            {/* Drag Overlay - simpler, cleaner */}
+            {/* Drag Overlay - positioned at cursor */}
             <DragOverlay dropAnimation={null}>
                 {activeItem && (
-                    <div className="px-3 py-2 rounded-lg bg-app-primary text-white shadow-xl text-sm font-medium">
-                        <div className="flex items-center gap-2">
+                    <div
+                        className="px-2 py-1.5 rounded-md bg-app-primary text-white shadow-lg text-xs font-medium pointer-events-none"
+                        style={{ transform: 'translate(-50%, -50%)' }}
+                    >
+                        <div className="flex items-center gap-1.5 whitespace-nowrap">
                             {activeItem.type === 'notebook' ? (
-                                <Book size={14} />
+                                <Book size={12} />
                             ) : (
-                                <FileText size={14} />
+                                <FileText size={12} />
                             )}
-                            <span className="truncate max-w-[140px]">{activeItem.title}</span>
+                            <span className="max-w-[120px] truncate">{activeItem.title}</span>
                         </div>
                     </div>
                 )}
