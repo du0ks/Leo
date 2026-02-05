@@ -157,6 +157,17 @@ export function Sidebar() {
         const dragData = active.data.current as DragItem;
         const dropId = over.id as string;
 
+        // Handle dropping onto the Library/Root header
+        if (dropId === 'root') {
+            if (dragData.type === 'notebook' && dragData.parentNotebookId !== null) {
+                await moveNotebook.mutateAsync({
+                    id: dragData.id,
+                    newParentId: null,
+                });
+            }
+            return;
+        }
+
         // Determine what we're dropping onto
         const droppedOnNotebook = notebooks?.find(nb => nb.id === dropId);
 
@@ -203,17 +214,10 @@ export function Sidebar() {
         >
             <div className="w-64 h-full bg-app-surface border-r border-app-border flex flex-col">
                 {/* Header */}
-                <div className="p-4 border-b border-app-border flex items-center justify-between">
-                    <h2 className="text-lg font-semibold text-app-text">Library</h2>
-                    <ActionIcon
-                        variant="subtle"
-                        color="gray"
-                        onClick={() => setIsCreatingNotebook(true)}
-                        title="New Notebook"
-                    >
-                        <FolderPlus size={18} />
-                    </ActionIcon>
-                </div>
+                <RootDropZone
+                    onAddClick={() => setIsCreatingNotebook(true)}
+                    isDragging={!!activeItem}
+                />
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
@@ -310,6 +314,42 @@ export function Sidebar() {
                 )}
             </DragOverlay>
         </DndContext>
+    );
+}
+
+// --- Root Drop Zone Header ---
+
+function RootDropZone({ onAddClick, isDragging }: { onAddClick: () => void; isDragging: boolean }) {
+    const { setNodeRef, isOver } = useDroppable({
+        id: 'root',
+    });
+
+    return (
+        <div
+            ref={setNodeRef}
+            className={clsx(
+                "p-4 border-b border-app-border flex items-center justify-between transition-all",
+                isDragging && "bg-app-primary/5",
+                isOver && "bg-app-primary/20 ring-1 ring-inset ring-app-primary"
+            )}
+        >
+            <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-app-text">Library</h2>
+                {isOver && (
+                    <span className="text-xs font-medium text-app-primary animate-fade-in">
+                        (Drop to move to root)
+                    </span>
+                )}
+            </div>
+            <ActionIcon
+                variant="subtle"
+                color="gray"
+                onClick={onAddClick}
+                title="New Notebook"
+            >
+                <FolderPlus size={18} />
+            </ActionIcon>
+        </div>
     );
 }
 
