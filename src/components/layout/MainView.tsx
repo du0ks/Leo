@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
 
 import { useNote, useUpdateNote, useRestoreNote, usePermanentlyDeleteNote } from '../../hooks/useNotes';
 import { useUIStore } from '../../stores/uiStore';
@@ -24,8 +24,12 @@ export function MainView() {
 
     // Local state for both title AND content to buffer edits from server overwrites
     const [title, setTitle] = useState('');
-    const [localContent, setLocalContent] = useState<Block[] | null>(null);
+    // Store content paired with its note ID to prevent content bleeding
+    const [localContentState, setLocalContentState] = useState<{ id: string, data: Block[] } | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+
+    // Derived local content: only return data if it belongs to the current note
+    const localContent = localContentState?.id === selectedNoteId ? localContentState.data : null;
 
     const lastInitializedId = useRef<string | null>(null);
     // Track whether we've synced from server for current note
@@ -35,7 +39,7 @@ export function MainView() {
     useEffect(() => {
         if (selectedNoteId !== lastInitializedId.current) {
             // Immediately clear local state for new note
-            setLocalContent(null);
+            setLocalContentState(null);
             setTitle('');
             hasSyncedRef.current = false;
             lastInitializedId.current = selectedNoteId;
@@ -47,12 +51,18 @@ export function MainView() {
     useEffect(() => {
         if (note && note.id === selectedNoteId && !hasSyncedRef.current) {
             setTitle(note.title);
-            setLocalContent(note.content as Block[] ?? []);
+            setLocalContentState({ id: note.id, data: note.content as Block[] ?? [] });
             hasSyncedRef.current = true;
         }
     }, [note, selectedNoteId]);
 
+    // Use ref for updateNote to stabilize saveContent callback
+    // This prevents debouncedSaveContent from being recreated when updateNote changes
+    const updateNoteRef = useRef(updateNote);
+    updateNoteRef.current = updateNote;
+
     // Save function that captures correct note ID at call time
+    // Uses ref to avoid dependency on updateNote, keeping this stable
     const saveContent = useCallback(
         async (content: Block[], noteId: string, notebookId: string) => {
             // Guard against saving to wrong note
@@ -60,30 +70,22 @@ export function MainView() {
 
             setIsSaving(true);
             try {
-                await updateNote.mutateAsync({ id: noteId, notebookId, content });
+                await updateNoteRef.current.mutateAsync({ id: noteId, notebookId, content });
             } finally {
                 setIsSaving(false);
             }
         },
-        [updateNote]
+        [] // No dependencies - uses ref instead
     );
 
     const debouncedSaveContent = useDebouncedCallback(saveContent, 1500);
-
-    // Flush pending content saves when note changes
-    useEffect(() => {
-        return () => {
-            // This runs when selectedNoteId changes (before the new note is selected)
-            debouncedSaveContent.flush();
-        };
-    }, [selectedNoteId, debouncedSaveContent]);
 
     const debouncedSaveTitle = useDebouncedCallback(
         async (newTitle: string, noteId: string, notebookId: string) => {
             if (!noteId || !notebookId) return;
             setIsSaving(true);
             try {
-                await updateNote.mutateAsync({ id: noteId, notebookId, title: newTitle });
+                await updateNoteRef.current.mutateAsync({ id: noteId, notebookId, title: newTitle });
             } finally {
                 setIsSaving(false);
             }
@@ -91,12 +93,18 @@ export function MainView() {
         1000
     );
 
-    // Flush pending title saves when note changes  
-    useEffect(() => {
-        return () => {
+    // Track previous note ID to flush when it changes
+    const prevNoteIdRef = useRef<string | null>(null);
+
+    // Flush both content and title synchronously when note changes
+    // This runs in the effect body (not cleanup) to avoid StrictMode double-instance issues
+    useLayoutEffect(() => {
+        if (prevNoteIdRef.current !== null && prevNoteIdRef.current !== selectedNoteId) {
+            debouncedSaveContent.flush();
             debouncedSaveTitle.flush();
-        };
-    }, [selectedNoteId, debouncedSaveTitle]);
+        }
+        prevNoteIdRef.current = selectedNoteId;
+    }, [selectedNoteId, debouncedSaveContent, debouncedSaveTitle]);
 
     const handleTitleChange = useCallback(
         (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -111,9 +119,19 @@ export function MainView() {
     );
 
     const handleContentChange = useCallback(
-        (content: Block[]) => {
+        (content: Block[], sourceNoteId: string) => {
+            // CRITICAL: Prevent race conditions where a previous note's editor fires an update
+            // after the selection has changed. This was causing "Content Bleeding".
+            if (sourceNoteId !== selectedNoteId) {
+                console.warn(`[MainView] Race condition avoided: ignored update from ${sourceNoteId} while on ${selectedNoteId}`);
+                return;
+            }
+
             // Update local state immediately for responsiveness
-            setLocalContent(content);
+            if (selectedNoteId) {
+                setLocalContentState({ id: selectedNoteId, data: content });
+            }
+
             // Capture current IDs to prevent stale closure issues
             if (selectedNoteId && selectedNotebookId) {
                 debouncedSaveContent(content, selectedNoteId, selectedNotebookId);
@@ -229,9 +247,10 @@ export function MainView() {
                         <span className="font-medium">This note is in the trash. It's read-only until restored.</span>
                     </div>
                 )}
-                {localContent !== null ? (
+                {localContent !== null && selectedNoteId ? (
                     <NoteEditor
                         key={selectedNoteId}
+                        noteId={selectedNoteId}
                         content={localContent}
                         onChange={handleContentChange}
                         editable={!isTrashed}

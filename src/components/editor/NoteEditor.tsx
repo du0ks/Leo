@@ -8,8 +8,9 @@ import type { Block, PartialBlock } from '@blocknote/core';
 import { useUIStore } from '../../stores/uiStore';
 
 interface NoteEditorProps {
+    noteId: string;
     content: unknown;
-    onChange: (content: Block[]) => void;
+    onChange: (content: Block[], noteId: string) => void;
     editable?: boolean;
 }
 
@@ -21,7 +22,7 @@ const getDefaultContent = (): PartialBlock[] => [
     },
 ];
 
-export function NoteEditor({ content, onChange, editable = true }: NoteEditorProps) {
+export function NoteEditor({ noteId, content, onChange, editable = true }: NoteEditorProps) {
     const isInitialLoad = useRef(true);
     const { darkMode } = useUIStore();
 
@@ -47,8 +48,8 @@ export function NoteEditor({ content, onChange, editable = true }: NoteEditorPro
             isInitialLoad.current = false;
             return;
         }
-        onChange(editor.document);
-    }, [editor, onChange]);
+        onChange(editor.document, noteId);
+    }, [editor, onChange, noteId]);
 
     return (
         <div className="note-editor h-full overflow-auto">
