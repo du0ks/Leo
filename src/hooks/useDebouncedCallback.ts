@@ -33,6 +33,29 @@ export function useDebouncedCallback<T extends AnyFunction>(
         };
     }, []);
 
+    // Create stable flush and cancel functions using refs
+    // These are NOT wrapped in useCallback to avoid stale closure issues
+    const flushRef = useRef<() => void>(() => { });
+    const cancelRef = useRef<() => void>(() => { });
+
+    // Update the flush/cancel functions on every render to capture current refs
+    flushRef.current = () => {
+        if (timeoutRef.current && pendingArgsRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+            callbackRef.current(...pendingArgsRef.current);
+            pendingArgsRef.current = null;
+        }
+    };
+
+    cancelRef.current = () => {
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+            pendingArgsRef.current = null;
+        }
+    };
+
     const debouncedCallback = useCallback(
         (...args: Parameters<T>) => {
             if (timeoutRef.current) {
@@ -51,23 +74,14 @@ export function useDebouncedCallback<T extends AnyFunction>(
         [delay]
     ) as DebouncedFunction<T>;
 
-    // Flush: immediately execute pending callback
+    // Expose stable wrapper functions that delegate to current refs
+    // This avoids stale closures - flush always operates on current pending state
     debouncedCallback.flush = useCallback(() => {
-        if (timeoutRef.current && pendingArgsRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-            callbackRef.current(...pendingArgsRef.current);
-            pendingArgsRef.current = null;
-        }
+        flushRef.current();
     }, []);
 
-    // Cancel: discard pending callback without executing
     debouncedCallback.cancel = useCallback(() => {
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-            pendingArgsRef.current = null;
-        }
+        cancelRef.current();
     }, []);
 
     return debouncedCallback;
