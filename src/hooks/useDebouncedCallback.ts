@@ -1,22 +1,34 @@
 import { useRef, useCallback, useEffect } from 'react';
 
-export function useDebouncedCallback<T extends (...args: Parameters<T>) => void>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyFunction = (...args: any[]) => void;
+
+type DebouncedFunction<T extends AnyFunction> = T & {
+    flush: () => void;
+    cancel: () => void;
+};
+
+export function useDebouncedCallback<T extends AnyFunction>(
     callback: T,
     delay: number
-): T {
+): DebouncedFunction<T> {
     const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const callbackRef = useRef(callback);
+    const callbackRef = useRef<T>(callback);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pendingArgsRef = useRef<any[] | null>(null);
 
     // Update ref when callback changes
     useEffect(() => {
         callbackRef.current = callback;
     }, [callback]);
 
-    // Cleanup on unmount
+    // Cleanup on unmount - flush pending changes instead of dropping them
     useEffect(() => {
         return () => {
-            if (timeoutRef.current) {
+            if (timeoutRef.current && pendingArgsRef.current) {
                 clearTimeout(timeoutRef.current);
+                // Save pending changes on unmount
+                callbackRef.current(...pendingArgsRef.current);
             }
         };
     }, []);
@@ -27,12 +39,36 @@ export function useDebouncedCallback<T extends (...args: Parameters<T>) => void>
                 clearTimeout(timeoutRef.current);
             }
 
+            // Store args for potential flush
+            pendingArgsRef.current = args;
+
             timeoutRef.current = setTimeout(() => {
                 callbackRef.current(...args);
+                pendingArgsRef.current = null;
+                timeoutRef.current = null;
             }, delay);
         },
         [delay]
-    ) as T;
+    ) as DebouncedFunction<T>;
+
+    // Flush: immediately execute pending callback
+    debouncedCallback.flush = useCallback(() => {
+        if (timeoutRef.current && pendingArgsRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+            callbackRef.current(...pendingArgsRef.current);
+            pendingArgsRef.current = null;
+        }
+    }, []);
+
+    // Cancel: discard pending callback without executing
+    debouncedCallback.cancel = useCallback(() => {
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+            pendingArgsRef.current = null;
+        }
+    }, []);
 
     return debouncedCallback;
 }

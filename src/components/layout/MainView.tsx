@@ -22,37 +22,68 @@ export function MainView() {
     const permanentlyDeleteNote = usePermanentlyDeleteNote();
     const isOnline = useOnlineStatus();
 
+    // Local state for both title AND content to buffer edits from server overwrites
     const [title, setTitle] = useState('');
+    const [localContent, setLocalContent] = useState<Block[] | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
     const lastInitializedId = useRef<string | null>(null);
+    // Track whether we've synced from server for current note
+    const hasSyncedRef = useRef(false);
 
+    // Reset local state immediately when note ID changes (before data loads)
     useEffect(() => {
-        if (note && selectedNoteId !== lastInitializedId.current) {
-            setTitle(note.title);
+        if (selectedNoteId !== lastInitializedId.current) {
+            // Immediately clear local state for new note
+            setLocalContent(null);
+            setTitle('');
+            hasSyncedRef.current = false;
             lastInitializedId.current = selectedNoteId;
+        }
+    }, [selectedNoteId]);
+
+    // Sync local state from server when note data arrives
+    // IMPORTANT: Must verify note.id matches selectedNoteId to avoid syncing stale data
+    useEffect(() => {
+        if (note && note.id === selectedNoteId && !hasSyncedRef.current) {
+            setTitle(note.title);
+            setLocalContent(note.content as Block[] ?? []);
+            hasSyncedRef.current = true;
         }
     }, [note, selectedNoteId]);
 
-    const debouncedSaveContent = useDebouncedCallback(
-        async (content: Block[]) => {
-            if (!selectedNoteId || note?.deleted_at) return;
+    // Save function that captures correct note ID at call time
+    const saveContent = useCallback(
+        async (content: Block[], noteId: string, notebookId: string) => {
+            // Guard against saving to wrong note
+            if (!noteId || !notebookId) return;
+
             setIsSaving(true);
             try {
-                await updateNote.mutateAsync({ id: selectedNoteId, notebookId: selectedNotebookId!, content });
+                await updateNote.mutateAsync({ id: noteId, notebookId, content });
             } finally {
                 setIsSaving(false);
             }
         },
-        1500
+        [updateNote]
     );
 
+    const debouncedSaveContent = useDebouncedCallback(saveContent, 1500);
+
+    // Flush pending content saves when note changes
+    useEffect(() => {
+        return () => {
+            // This runs when selectedNoteId changes (before the new note is selected)
+            debouncedSaveContent.flush();
+        };
+    }, [selectedNoteId, debouncedSaveContent]);
+
     const debouncedSaveTitle = useDebouncedCallback(
-        async (newTitle: string) => {
-            if (!selectedNoteId || note?.deleted_at) return;
+        async (newTitle: string, noteId: string, notebookId: string) => {
+            if (!noteId || !notebookId) return;
             setIsSaving(true);
             try {
-                await updateNote.mutateAsync({ id: selectedNoteId, notebookId: selectedNotebookId!, title: newTitle });
+                await updateNote.mutateAsync({ id: noteId, notebookId, title: newTitle });
             } finally {
                 setIsSaving(false);
             }
@@ -60,20 +91,35 @@ export function MainView() {
         1000
     );
 
+    // Flush pending title saves when note changes  
+    useEffect(() => {
+        return () => {
+            debouncedSaveTitle.flush();
+        };
+    }, [selectedNoteId, debouncedSaveTitle]);
+
     const handleTitleChange = useCallback(
         (e: React.ChangeEvent<HTMLInputElement>) => {
             const newTitle = e.target.value;
             setTitle(newTitle);
-            debouncedSaveTitle(newTitle);
+            // Capture current IDs to prevent stale closure issues
+            if (selectedNoteId && selectedNotebookId) {
+                debouncedSaveTitle(newTitle, selectedNoteId, selectedNotebookId);
+            }
         },
-        [debouncedSaveTitle]
+        [selectedNoteId, selectedNotebookId, debouncedSaveTitle]
     );
 
     const handleContentChange = useCallback(
         (content: Block[]) => {
-            debouncedSaveContent(content);
+            // Update local state immediately for responsiveness
+            setLocalContent(content);
+            // Capture current IDs to prevent stale closure issues
+            if (selectedNoteId && selectedNotebookId) {
+                debouncedSaveContent(content, selectedNoteId, selectedNotebookId);
+            }
         },
-        [debouncedSaveContent]
+        [selectedNoteId, selectedNotebookId, debouncedSaveContent]
     );
 
     const handleRestore = async () => {
@@ -183,12 +229,18 @@ export function MainView() {
                         <span className="font-medium">This note is in the trash. It's read-only until restored.</span>
                     </div>
                 )}
-                <NoteEditor
-                    key={selectedNoteId}
-                    content={note?.content ?? []}
-                    onChange={handleContentChange}
-                    editable={!isTrashed}
-                />
+                {localContent !== null ? (
+                    <NoteEditor
+                        key={selectedNoteId}
+                        content={localContent}
+                        onChange={handleContentChange}
+                        editable={!isTrashed}
+                    />
+                ) : (
+                    <div className="flex items-center justify-center h-32">
+                        <Loader2 className="w-6 h-6 animate-spin text-app-muted" />
+                    </div>
+                )}
             </div>
         </div>
     );
