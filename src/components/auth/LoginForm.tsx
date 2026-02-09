@@ -9,8 +9,9 @@ export function LoginForm() {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isForgotPassword, setIsForgotPassword] = useState(false);
 
-    const { signIn, signUp } = useAuth();
+    const { signIn, signUp, resetPassword } = useAuth();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -19,7 +20,10 @@ export function LoginForm() {
         setIsSubmitting(true);
 
         try {
-            if (isSignUp) {
+            if (isForgotPassword) {
+                const message = await resetPassword(email);
+                setSuccess(message);
+            } else if (isSignUp) {
                 const message = await signUp(email, password);
                 setSuccess(message);
                 // Clear password but keep email for convenience
@@ -85,20 +89,38 @@ export function LoginForm() {
                                 />
                             </div>
 
-                            <div className="relative group">
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none z-10">
-                                    <Lock className="w-5 h-5 text-app-muted group-focus-within:text-app-primary transition-colors" />
+                            {!isForgotPassword && (
+                                <div className="relative group">
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none z-10">
+                                        <Lock className="w-5 h-5 text-app-muted group-focus-within:text-app-primary transition-colors" />
+                                    </div>
+                                    <input
+                                        type="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        placeholder="Password"
+                                        className="w-full !pl-12 pr-4 py-3.5 bg-app-bg border border-app-border rounded-xl text-app-text placeholder:text-app-muted focus:outline-none focus:ring-2 focus:ring-app-primary/50 focus:border-app-primary transition-all"
+                                        required
+                                    />
                                 </div>
-                                <input
-                                    type="password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    placeholder="Password"
-                                    className="w-full !pl-12 pr-4 py-3.5 bg-app-bg border border-app-border rounded-xl text-app-text placeholder:text-app-muted focus:outline-none focus:ring-2 focus:ring-app-primary/50 focus:border-app-primary transition-all"
-                                    required
-                                />
-                            </div>
+                            )}
                         </div>
+
+                        {!isSignUp && !isForgotPassword && (
+                            <div className="text-right -mt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsForgotPassword(true);
+                                        setError(null);
+                                        setSuccess(null);
+                                    }}
+                                    className="text-sm text-app-muted hover:text-app-primary transition-colors"
+                                >
+                                    Forgot password?
+                                </button>
+                            </div>
+                        )}
 
                         <button
                             type="submit"
@@ -110,7 +132,7 @@ export function LoginForm() {
                                     <Loader2 className="w-5 h-5 animate-spin" />
                                 ) : (
                                     <>
-                                        <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
+                                        <span>{isForgotPassword ? 'Send Reset Link' : isSignUp ? 'Create Account' : 'Sign In'}</span>
                                         <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
                                     </>
                                 )}
@@ -118,17 +140,31 @@ export function LoginForm() {
                         </button>
                     </form>
 
-                    <div className="mt-6 text-center">
-                        <button
-                            onClick={() => {
-                                setIsSignUp(!isSignUp);
-                                setError(null);
-                                setSuccess(null);
-                            }}
-                            className="text-sm text-app-muted hover:text-app-primary transition-colors font-medium"
-                        >
-                            {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
-                        </button>
+                    <div className="mt-6 text-center space-y-2">
+                        {isForgotPassword ? (
+                            <button
+                                onClick={() => {
+                                    setIsForgotPassword(false);
+                                    setError(null);
+                                    setSuccess(null);
+                                }}
+                                className="text-sm text-app-muted hover:text-app-primary transition-colors font-medium"
+                            >
+                                ← Back to sign in
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => {
+                                    setIsSignUp(!isSignUp);
+                                    setIsForgotPassword(false);
+                                    setError(null);
+                                    setSuccess(null);
+                                }}
+                                className="text-sm text-app-muted hover:text-app-primary transition-colors font-medium"
+                            >
+                                {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+                            </button>
+                        )}
                     </div>
                 </div>
 

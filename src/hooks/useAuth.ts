@@ -4,6 +4,7 @@ import {
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
     sendEmailVerification,
+    sendPasswordResetEmail,
     signOut as firebaseSignOut,
     User,
     AuthError
@@ -112,6 +113,15 @@ export function useAuth() {
         await firebaseSignOut(auth);
     };
 
+    const resetPassword = async (email: string) => {
+        try {
+            await sendPasswordResetEmail(auth, email);
+            return 'Password reset email sent! Please check your inbox.';
+        } catch (error) {
+            throw new Error(getAuthErrorMessage(error as AuthError));
+        }
+    };
+
     return {
         user,
         session: user, // For backwards compatibility
@@ -120,5 +130,6 @@ export function useAuth() {
         signIn,
         signUp,
         signOut,
+        resetPassword,
     };
 }
