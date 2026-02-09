@@ -3,7 +3,7 @@ import '@blocknote/mantine/style.css';
 
 import { useCreateBlockNote } from '@blocknote/react';
 import { BlockNoteView } from '@blocknote/mantine';
-import { useCallback, useRef, useMemo } from 'react';
+import { useCallback, useRef, useMemo, useEffect } from 'react';
 import type { Block, PartialBlock } from '@blocknote/core';
 import { useUIStore } from '../../stores/uiStore';
 
@@ -50,6 +50,16 @@ export function NoteEditor({ noteId, content, onChange, editable = true }: NoteE
         }
         onChange(editor.document, noteId);
     }, [editor, onChange, noteId]);
+
+    // Attach listener directly to editor to catch paste events
+    useEffect(() => {
+        if (editor && typeof editor.onChange === 'function') {
+            const unsubscribe = editor.onChange(handleChange);
+            return () => {
+                unsubscribe();
+            };
+        }
+    }, [editor, handleChange]);
 
     return (
         <div className="note-editor h-full overflow-auto">

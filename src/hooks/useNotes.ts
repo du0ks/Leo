@@ -261,9 +261,12 @@ export function useUpdateNote() {
 
             return { previousNote };
         },
-        onSuccess: (data) => {
-            queryClient.invalidateQueries({ queryKey: ['note', data!!.id] });
-            queryClient.invalidateQueries({ queryKey: ['notes', data!!.notebookId] });
+        // Note: We intentionally DON'T invalidate queries here.
+        // The real-time snapshot listener will sync data when Firestore propagates the write.
+        // Calling invalidateQueries immediately can cause a race condition where we refetch
+        // stale data before the write has propagated, causing data loss during rapid edits.
+        onSuccess: () => {
+            // No-op: rely on snapshot listeners and optimistic updates
         },
     });
 }

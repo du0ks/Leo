@@ -1,11 +1,12 @@
 import { useRef, useCallback, useEffect } from 'react';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyFunction = (...args: any[]) => void;
+type AnyFunction = (...args: any[]) => any;
 
-type DebouncedFunction<T extends AnyFunction> = T & {
-    flush: () => void;
+type DebouncedFunction<T extends AnyFunction> = ((...args: Parameters<T>) => void) & {
+    flush: () => Promise<void>;
     cancel: () => void;
+    hasPending: () => boolean;
 };
 
 export function useDebouncedCallback<T extends AnyFunction>(
@@ -16,6 +17,8 @@ export function useDebouncedCallback<T extends AnyFunction>(
     const callbackRef = useRef<T>(callback);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pendingArgsRef = useRef<any[] | null>(null);
+    // Track in-flight async operations
+    const inflightPromiseRef = useRef<Promise<void> | null>(null);
 
     // Update ref when callback changes
     useEffect(() => {
@@ -34,17 +37,33 @@ export function useDebouncedCallback<T extends AnyFunction>(
     }, []);
 
     // Create stable flush and cancel functions using refs
-    // These are NOT wrapped in useCallback to avoid stale closure issues
-    const flushRef = useRef<() => void>(() => { });
+    const flushRef = useRef<() => Promise<void>>(async () => { });
     const cancelRef = useRef<() => void>(() => { });
+    const hasPendingRef = useRef<() => boolean>(() => false);
 
     // Update the flush/cancel functions on every render to capture current refs
-    flushRef.current = () => {
+    flushRef.current = async () => {
+        // First, wait for any in-flight operation from a previous flush
+        if (inflightPromiseRef.current) {
+            await inflightPromiseRef.current;
+        }
+
         if (timeoutRef.current && pendingArgsRef.current) {
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
-            callbackRef.current(...pendingArgsRef.current);
+            const args = pendingArgsRef.current;
             pendingArgsRef.current = null;
+
+            // Execute and track the promise
+            const result = callbackRef.current(...args);
+            if (result && typeof result.then === 'function') {
+                inflightPromiseRef.current = result;
+                try {
+                    await result;
+                } finally {
+                    inflightPromiseRef.current = null;
+                }
+            }
         }
     };
 
@@ -54,6 +73,10 @@ export function useDebouncedCallback<T extends AnyFunction>(
             timeoutRef.current = null;
             pendingArgsRef.current = null;
         }
+    };
+
+    hasPendingRef.current = () => {
+        return pendingArgsRef.current !== null || inflightPromiseRef.current !== null;
     };
 
     const debouncedCallback = useCallback(
@@ -66,7 +89,14 @@ export function useDebouncedCallback<T extends AnyFunction>(
             pendingArgsRef.current = args;
 
             timeoutRef.current = setTimeout(() => {
-                callbackRef.current(...args);
+                const result = callbackRef.current(...args);
+                // Track if result is a promise
+                if (result && typeof result.then === 'function') {
+                    inflightPromiseRef.current = result;
+                    result.finally(() => {
+                        inflightPromiseRef.current = null;
+                    });
+                }
                 pendingArgsRef.current = null;
                 timeoutRef.current = null;
             }, delay);
@@ -75,13 +105,16 @@ export function useDebouncedCallback<T extends AnyFunction>(
     ) as DebouncedFunction<T>;
 
     // Expose stable wrapper functions that delegate to current refs
-    // This avoids stale closures - flush always operates on current pending state
-    debouncedCallback.flush = useCallback(() => {
-        flushRef.current();
+    debouncedCallback.flush = useCallback(async () => {
+        await flushRef.current();
     }, []);
 
     debouncedCallback.cancel = useCallback(() => {
         cancelRef.current();
+    }, []);
+
+    debouncedCallback.hasPending = useCallback(() => {
+        return hasPendingRef.current();
     }, []);
 
     return debouncedCallback;

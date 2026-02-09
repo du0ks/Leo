@@ -27,6 +27,15 @@ export function MainView() {
     // Store content paired with its note ID to prevent content bleeding
     const [localContentState, setLocalContentState] = useState<{ id: string, data: Block[] } | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    // Track if we're in the middle of flushing pending saves - use counter for multiple rapid switches
+    const pendingFlushCountRef = useRef(0);
+    const [isFlushing, setIsFlushing] = useState(false);
+
+    // Track notes that have local edits - these should NEVER be overwritten by server data
+    // This is the key protection against race conditions with Firestore snapshots
+    const dirtyNotesRef = useRef<Set<string>>(new Set());
+    // Cache content for dirty notes so we can restore when switching back
+    const dirtyContentCacheRef = useRef<Map<string, { content: Block[], title: string }>>(new Map());
 
     // Derived local content: only return data if it belongs to the current note
     const localContent = localContentState?.id === selectedNoteId ? localContentState.data : null;
@@ -36,25 +45,38 @@ export function MainView() {
     const hasSyncedRef = useRef(false);
 
     // Reset local state immediately when note ID changes (before data loads)
+    // BUT if the new note is dirty, restore from our cache instead
     useEffect(() => {
         if (selectedNoteId !== lastInitializedId.current) {
-            // Immediately clear local state for new note
-            setLocalContentState(null);
-            setTitle('');
-            hasSyncedRef.current = false;
+            const cached = selectedNoteId ? dirtyContentCacheRef.current.get(selectedNoteId) : undefined;
+            if (cached && selectedNoteId) {
+                // Dirty note - restore from cache, do NOT sync from server
+                setLocalContentState({ id: selectedNoteId, data: cached.content });
+                setTitle(cached.title);
+                hasSyncedRef.current = true; // Mark as synced to prevent server overwrite
+            } else {
+                // Clean note - clear state and wait for server sync
+                setLocalContentState(null);
+                setTitle('');
+                hasSyncedRef.current = false;
+            }
             lastInitializedId.current = selectedNoteId;
         }
     }, [selectedNoteId]);
 
     // Sync local state from server when note data arrives
-    // IMPORTANT: Must verify note.id matches selectedNoteId to avoid syncing stale data
+    // IMPORTANT: 
+    // 1. Must verify note.id matches selectedNoteId to avoid syncing stale data
+    // 2. Must wait for ALL pending flushes to complete first
+    // 3. NEVER sync if the note has local edits (dirty) - our local state is the source of truth
     useEffect(() => {
-        if (note && note.id === selectedNoteId && !hasSyncedRef.current) {
+        const isDirty = selectedNoteId ? dirtyNotesRef.current.has(selectedNoteId) : false;
+        if (note && note.id === selectedNoteId && !hasSyncedRef.current && !isFlushing && !isDirty) {
             setTitle(note.title);
             setLocalContentState({ id: note.id, data: note.content as Block[] ?? [] });
             hasSyncedRef.current = true;
         }
-    }, [note, selectedNoteId]);
+    }, [note, selectedNoteId, isFlushing]);
 
     // Use ref for updateNote to stabilize saveContent callback
     // This prevents debouncedSaveContent from being recreated when updateNote changes
@@ -96,12 +118,30 @@ export function MainView() {
     // Track previous note ID to flush when it changes
     const prevNoteIdRef = useRef<string | null>(null);
 
-    // Flush both content and title synchronously when note changes
-    // This runs in the effect body (not cleanup) to avoid StrictMode double-instance issues
+    // Flush both content and title when note changes
+    // CRITICAL: Use counter to track ALL in-flight flushes, not just the most recent one
     useLayoutEffect(() => {
-        if (prevNoteIdRef.current !== null && prevNoteIdRef.current !== selectedNoteId) {
-            debouncedSaveContent.flush();
-            debouncedSaveTitle.flush();
+        const prevId = prevNoteIdRef.current;
+        if (prevId !== null && prevId !== selectedNoteId) {
+            // Increment counter and set flushing state
+            pendingFlushCountRef.current += 1;
+            setIsFlushing(true);
+
+            // Perform async flush
+            (async () => {
+                try {
+                    await Promise.all([
+                        debouncedSaveContent.flush(),
+                        debouncedSaveTitle.flush()
+                    ]);
+                } finally {
+                    // Decrement counter - only clear isFlushing when ALL flushes complete
+                    pendingFlushCountRef.current -= 1;
+                    if (pendingFlushCountRef.current === 0) {
+                        setIsFlushing(false);
+                    }
+                }
+            })();
         }
         prevNoteIdRef.current = selectedNoteId;
     }, [selectedNoteId, debouncedSaveContent, debouncedSaveTitle]);
@@ -112,10 +152,18 @@ export function MainView() {
             setTitle(newTitle);
             // Capture current IDs to prevent stale closure issues
             if (selectedNoteId && selectedNotebookId) {
+                // Mark this note as having local edits
+                dirtyNotesRef.current.add(selectedNoteId);
+                // Update the cache with the new title (preserve existing content)
+                const existing = dirtyContentCacheRef.current.get(selectedNoteId);
+                dirtyContentCacheRef.current.set(selectedNoteId, {
+                    content: existing?.content ?? localContentState?.data ?? [],
+                    title: newTitle
+                });
                 debouncedSaveTitle(newTitle, selectedNoteId, selectedNotebookId);
             }
         },
-        [selectedNoteId, selectedNotebookId, debouncedSaveTitle]
+        [selectedNoteId, selectedNotebookId, debouncedSaveTitle, localContentState]
     );
 
     const handleContentChange = useCallback(
@@ -130,6 +178,14 @@ export function MainView() {
             // Update local state immediately for responsiveness
             if (selectedNoteId) {
                 setLocalContentState({ id: selectedNoteId, data: content });
+                // Mark this note as having local edits - it should NEVER be overwritten by server data
+                dirtyNotesRef.current.add(selectedNoteId);
+                // Update the cache with the new content (preserve existing title)
+                const existing = dirtyContentCacheRef.current.get(selectedNoteId);
+                dirtyContentCacheRef.current.set(selectedNoteId, {
+                    content: content,
+                    title: existing?.title ?? title
+                });
             }
 
             // Capture current IDs to prevent stale closure issues
@@ -137,7 +193,7 @@ export function MainView() {
                 debouncedSaveContent(content, selectedNoteId, selectedNotebookId);
             }
         },
-        [selectedNoteId, selectedNotebookId, debouncedSaveContent]
+        [selectedNoteId, selectedNotebookId, debouncedSaveContent, title]
     );
 
     const handleRestore = async () => {
