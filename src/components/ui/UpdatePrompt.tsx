@@ -1,8 +1,10 @@
 import { useRegisterSW } from 'virtual:pwa-register/react';
-import { useEffect, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { RefreshCw, X } from 'lucide-react';
 
 export function UpdatePrompt() {
+    const reloadingRef = useRef(false);
+
     const {
         needRefresh: [needRefresh, setNeedRefresh],
         updateServiceWorker,
@@ -12,24 +14,47 @@ export function UpdatePrompt() {
         },
     });
 
-    // Check for SW updates when user returns to the tab
-    const checkForUpdates = useCallback(async () => {
-        if (document.visibilityState === 'visible') {
-            const registration = await navigator.serviceWorker?.getRegistration();
-            if (registration) {
-                registration.update();
-            }
-        }
+    // Listen for controllerchange — fires when the new SW takes control.
+    // This is Google's recommended pattern: reload ONLY after the new SW
+    // is confirmed to be in control, guaranteeing fresh assets.
+    useEffect(() => {
+        const handleControllerChange = () => {
+            if (reloadingRef.current) return; // prevent double-reload
+            reloadingRef.current = true;
+            window.location.reload();
+        };
+
+        navigator.serviceWorker?.addEventListener('controllerchange', handleControllerChange);
+        return () => {
+            navigator.serviceWorker?.removeEventListener('controllerchange', handleControllerChange);
+        };
     }, []);
 
+    // Check for SW updates when user returns to the tab (visibility change).
+    // Zero bandwidth while idle, checks only when user actually comes back.
     useEffect(() => {
-        document.addEventListener('visibilitychange', checkForUpdates);
-        return () => {
-            document.removeEventListener('visibilitychange', checkForUpdates);
+        const handleVisibilityChange = async () => {
+            if (document.visibilityState === 'visible') {
+                const registration = await navigator.serviceWorker?.getRegistration();
+                if (registration) {
+                    registration.update();
+                }
+            }
         };
-    }, [checkForUpdates]);
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, []);
 
     if (!needRefresh) return null;
+
+    const handleUpdate = () => {
+        // Pass false to NOT auto-reload — we handle reload ourselves
+        // via the controllerchange listener above, which is more reliable.
+        updateServiceWorker(false);
+    };
 
     return (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] animate-slide-up">
@@ -39,7 +64,7 @@ export function UpdatePrompt() {
                     <span>New version available</span>
                 </div>
                 <button
-                    onClick={() => updateServiceWorker(true)}
+                    onClick={handleUpdate}
                     className="px-3 py-1 text-xs font-semibold rounded-lg bg-app-primary text-white hover:opacity-90 transition-opacity"
                 >
                     Update
