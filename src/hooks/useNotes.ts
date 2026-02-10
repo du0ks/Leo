@@ -49,7 +49,7 @@ export function useNotes(notebookId: string | null) {
                     };
                 })
                 .filter(n => n.deleted_at === null)
-                .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()) as Note[];
+                .sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })) as Note[];
         },
         enabled: !!notebookId && !!userId,
         staleTime: Infinity, // Rely on snapshot updates
@@ -75,7 +75,7 @@ export function useNotes(notebookId: string | null) {
                     };
                 })
                 .filter(n => n.deleted_at === null)
-                .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()) as Note[];
+                .sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })) as Note[];
 
             queryClient.setQueryData(['notes', notebookId], notes);
         }, (error) => {
