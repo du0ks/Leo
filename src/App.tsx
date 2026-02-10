@@ -133,12 +133,15 @@ function AppContent() {
   );
 }
 
+import { UpdatePrompt } from './components/ui/UpdatePrompt';
+
 export default function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <MantineProvider>
           <AppContent />
+          <UpdatePrompt />
         </MantineProvider>
       </QueryClientProvider>
     </ErrorBoundary>
