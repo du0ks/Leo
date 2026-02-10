@@ -1,4 +1,5 @@
 import { useRegisterSW } from 'virtual:pwa-register/react';
+import { useEffect, useCallback } from 'react';
 import { RefreshCw, X } from 'lucide-react';
 
 export function UpdatePrompt() {
@@ -6,18 +7,27 @@ export function UpdatePrompt() {
         needRefresh: [needRefresh, setNeedRefresh],
         updateServiceWorker,
     } = useRegisterSW({
-        onRegisteredSW(_swUrl: string, registration: ServiceWorkerRegistration | undefined) {
-            // Check for updates every 60 seconds
-            if (registration) {
-                setInterval(() => {
-                    registration.update();
-                }, 60 * 1000);
-            }
-        },
         onRegisterError(error: Error) {
             console.error('SW registration error:', error);
         },
     });
+
+    // Check for SW updates when user returns to the tab
+    const checkForUpdates = useCallback(async () => {
+        if (document.visibilityState === 'visible') {
+            const registration = await navigator.serviceWorker?.getRegistration();
+            if (registration) {
+                registration.update();
+            }
+        }
+    }, []);
+
+    useEffect(() => {
+        document.addEventListener('visibilitychange', checkForUpdates);
+        return () => {
+            document.removeEventListener('visibilitychange', checkForUpdates);
+        };
+    }, [checkForUpdates]);
 
     if (!needRefresh) return null;
 
