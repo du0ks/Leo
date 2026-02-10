@@ -11,7 +11,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { MainView } from './components/layout/MainView';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { SettingsModal } from './components/settings/SettingsModal';
-import { LogOut, Menu, Loader2, Settings } from 'lucide-react';
+import { LogOut, Menu, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 
 const queryClient = new QueryClient({
@@ -88,7 +88,7 @@ function AppContent() {
             className="app-header-vibrant-button group"
             title="Settings"
           >
-            <Settings className="w-5 h-5 transition-transform group-hover:rotate-45" />
+            <img src="/leo.png" alt="Settings" className="w-5 h-5 object-contain" />
           </button>
           <button
             onClick={signOut}
