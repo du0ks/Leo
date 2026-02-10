@@ -13,6 +13,8 @@ export default defineConfig(async () => ({
       registerType: "autoUpdate",
       workbox: {
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3MB limit
+        skipWaiting: true,
+        clientsClaim: true,
       },
       includeAssets: ['leo.png', 'apple-touch-icon.png'],
       manifest: {
