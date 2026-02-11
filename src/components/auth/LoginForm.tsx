@@ -170,7 +170,7 @@ export function LoginForm() {
 
                 {/* Footer */}
                 <p className="text-center text-xs text-app-muted mt-8 opacity-60">
-                    Privacy First • End-to-End Encrypted • Open Source
+                    Privacy First • Secure Authentication • Open Source
                 </p>
             </div>
         </div>

@@ -9,12 +9,34 @@ import {
     addDoc,
     updateDoc,
     deleteDoc,
+    writeBatch,
     serverTimestamp,
     Timestamp,
     onSnapshot
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import type { Note, NewNote } from '../lib/types';
+
+// Security: Input validation constants
+const MAX_TITLE_LENGTH = 200;
+const MAX_CONTENT_SIZE_BYTES = 500_000; // 500KB
+
+const sanitizeTitle = (title: string): string => {
+    const stripped = title.replace(/<[^>]*>/g, '').trim();
+    return stripped.slice(0, MAX_TITLE_LENGTH);
+};
+
+const validateContent = (content: unknown): unknown => {
+    if (content === undefined || content === null) return [];
+    if (!Array.isArray(content)) {
+        throw new Error('Invalid note content format');
+    }
+    const serialized = JSON.stringify(content);
+    if (serialized.length > MAX_CONTENT_SIZE_BYTES) {
+        throw new Error(`Note content exceeds maximum size of ${MAX_CONTENT_SIZE_BYTES / 1000}KB`);
+    }
+    return content;
+};
 
 // Helper to get notes collection for a notebook
 const getNotesRef = (notebookId: string) => {
@@ -197,9 +219,11 @@ export function useCreateNote() {
 
     return useMutation({
         mutationFn: async (note: NewNote): Promise<Note> => {
+            const safeTitle = sanitizeTitle(note.title || 'Untitled');
+            const safeContent = validateContent(note.content);
             const docRef = await addDoc(getNotesRef(note.notebook_id), {
-                title: note.title || 'Untitled',
-                content: note.content || [],
+                title: safeTitle,
+                content: safeContent,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 deletedAt: null,
@@ -208,8 +232,8 @@ export function useCreateNote() {
             return {
                 id: docRef.id,
                 notebook_id: note.notebook_id,
-                title: note.title || 'Untitled',
-                content: note.content || [],
+                title: safeTitle,
+                content: safeContent,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 deleted_at: null,
@@ -241,8 +265,8 @@ export function useUpdateNote() {
             const updates: { updatedAt: ReturnType<typeof serverTimestamp>; title?: string; content?: unknown } = {
                 updatedAt: serverTimestamp(),
             };
-            if (title !== undefined) updates.title = title;
-            if (content !== undefined) updates.content = content;
+            if (title !== undefined) updates.title = sanitizeTitle(title);
+            if (content !== undefined) updates.content = validateContent(content);
 
             await updateDoc(docRef, updates);
             return { id, notebookId };
@@ -346,14 +370,21 @@ export function useMoveNote() {
 
             const noteData = oldDocSnap.data();
 
+            // LOW-1 fix: Use batch write for atomicity (prevents data loss if partial failure)
+            const batch = writeBatch(db);
+
             // Create note in new notebook
-            const newDocRef = await addDoc(getNotesRef(toNotebookId), {
+            const newDocRef = doc(getNotesRef(toNotebookId));
+            batch.set(newDocRef, {
                 ...noteData,
                 updatedAt: serverTimestamp(),
             });
 
             // Delete from old notebook
-            await deleteDoc(oldDocRef);
+            batch.delete(oldDocRef);
+
+            // Commit both operations atomically
+            await batch.commit();
 
             return {
                 oldId: id,

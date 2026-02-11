@@ -25,7 +25,7 @@ function getAuthErrorMessage(error: AuthError): string {
 
         // Password errors
         case 'auth/weak-password':
-            return 'Password must be at least 6 characters long.';
+            return 'Password must be at least 8 characters, including uppercase, number, and special character.';
         case 'auth/wrong-password':
             return 'Incorrect password. Please try again.';
 
@@ -49,6 +49,15 @@ function getAuthErrorMessage(error: AuthError): string {
     }
 }
 
+// HIGH-4: Strong password validation
+function validatePasswordStrength(password: string): string | null {
+    if (password.length < 8) return 'Password must be at least 8 characters long.';
+    if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter.';
+    if (!/[0-9]/.test(password)) return 'Password must contain at least one number.';
+    if (!/[^A-Za-z0-9]/.test(password)) return 'Password must contain at least one special character.';
+    return null;
+}
+
 export function useAuth() {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
@@ -64,9 +73,7 @@ export function useAuth() {
 
     const signIn = async (email: string, password: string) => {
         try {
-            console.time('🔐 Firebase Auth');
             const { user } = await signInWithEmailAndPassword(auth, email, password);
-            console.timeEnd('🔐 Firebase Auth');
 
             // Check if email is verified
             if (!user.emailVerified) {
@@ -84,15 +91,20 @@ export function useAuth() {
     };
 
     const signUp = async (email: string, password: string) => {
+        // HIGH-4: Validate password strength before sending to Firebase
+        const passwordError = validatePasswordStrength(password);
+        if (passwordError) {
+            throw new Error(passwordError);
+        }
+
         try {
             const { user } = await createUserWithEmailAndPassword(auth, email, password);
 
             // Send verification email
             await sendEmailVerification(user);
 
-            // Create user profile in Firestore
+            // Create user profile in Firestore (LOW-2: no redundant email storage)
             await setDoc(doc(db, 'users', user.uid), {
-                email: user.email,
                 displayName: null,
                 createdAt: new Date(),
                 darkMode: true,

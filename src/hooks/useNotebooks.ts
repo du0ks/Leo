@@ -15,6 +15,15 @@ import {
 import { db, auth } from '../lib/firebase';
 import type { Notebook, NewNotebook } from '../lib/types';
 
+// Security: Input validation constants
+const MAX_TITLE_LENGTH = 200;
+
+// Strip HTML tags and enforce length limits
+const sanitizeTitle = (title: string): string => {
+    const stripped = title.replace(/<[^>]*>/g, '').trim();
+    return stripped.slice(0, MAX_TITLE_LENGTH);
+};
+
 // Helper to get user's notebooks collection
 const getNotebooksRef = () => {
     const userId = auth.currentUser?.uid;
@@ -114,8 +123,9 @@ export function useCreateNotebook() {
 
     return useMutation({
         mutationFn: async (notebook: NewNotebook): Promise<Notebook> => {
+            const safeTitle = sanitizeTitle(notebook.title || 'Untitled');
             const docRef = await addDoc(getNotebooksRef(), {
-                title: notebook.title || 'Untitled',
+                title: safeTitle,
                 parentNotebookId: notebook.parent_notebook_id || null,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
@@ -125,7 +135,7 @@ export function useCreateNotebook() {
             return {
                 id: docRef.id,
                 user_id: auth.currentUser!.uid,
-                title: notebook.title || 'Untitled',
+                title: safeTitle,
                 parent_notebook_id: notebook.parent_notebook_id || null,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
@@ -151,7 +161,7 @@ export function useUpdateNotebook() {
             const docRef = doc(getNotebooksRef(), id);
             const updates: any = { updatedAt: serverTimestamp() };
 
-            if (title !== undefined) updates.title = title;
+            if (title !== undefined) updates.title = sanitizeTitle(title);
             if (parent_notebook_id !== undefined) updates.parentNotebookId = parent_notebook_id;
 
             await updateDoc(docRef, updates);

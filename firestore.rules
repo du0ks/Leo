@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default: deny all access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User profiles — only the authenticated owner can read/write their own document
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Validate user profile writes
+      allow write: if request.auth != null
+                   && request.auth.uid == userId
+                   && request.resource.data.keys().hasOnly(['email', 'displayName', 'createdAt', 'darkMode', 'themeColor', 'updatedAt']);
+
+      // Notebooks — scoped to the owning user
+      match /notebooks/{notebookId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+
+        // Validate notebook writes
+        allow create: if request.auth != null
+                      && request.auth.uid == userId
+                      && request.resource.data.title is string
+                      && request.resource.data.title.size() <= 200;
+
+        allow update: if request.auth != null
+                      && request.auth.uid == userId
+                      && (!('title' in request.resource.data) || (request.resource.data.title is string && request.resource.data.title.size() <= 200));
+
+        // Notes — nested under notebooks, scoped to the owning user
+        match /notes/{noteId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+
+          // Validate note writes
+          allow create: if request.auth != null
+                        && request.auth.uid == userId
+                        && request.resource.data.title is string
+                        && request.resource.data.title.size() <= 200;
+
+          allow update: if request.auth != null
+                        && request.auth.uid == userId
+                        && (!('title' in request.resource.data) || (request.resource.data.title is string && request.resource.data.title.size() <= 200));
+        }
+      }
+    }
+  }
+}

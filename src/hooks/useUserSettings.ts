@@ -21,10 +21,8 @@ export function useUserSettings() {
         queryKey: ['settings', userId],
         queryFn: async (): Promise<UserSettings | null> => {
             if (!userId) return null;
-            console.time('⚙️ Firestore Settings Fetch');
             const docRef = doc(db, 'users', userId);
             const snapshot = await getDoc(docRef);
-            console.timeEnd('⚙️ Firestore Settings Fetch');
             if (snapshot.exists()) {
                 const data = snapshot.data();
                 return {
