@@ -31,11 +31,16 @@ const validateContent = (content: unknown): unknown => {
     if (!Array.isArray(content)) {
         throw new Error('Invalid note content format');
     }
+
+    // Stringify to calculate size AND strip undefined values automatically
     const serialized = JSON.stringify(content);
     if (serialized.length > MAX_CONTENT_SIZE_BYTES) {
         throw new Error(`Note content exceeds maximum size of ${MAX_CONTENT_SIZE_BYTES / 1000}KB`);
     }
-    return content;
+
+    // Recursively remove `undefined` keys by parsing the serialized string. 
+    // This solves the Firestore "Unsupported field value: undefined" error when deeply nested undefined properties exist.
+    return JSON.parse(serialized);
 };
 
 // Helper to get notes collection for a notebook
@@ -262,11 +267,39 @@ export function useUpdateNote() {
         }) => {
             const docRef = doc(getNotesRef(notebookId), id);
 
+            // Helper to find undefined paths in an object for debugging data loss issues
+            const findUndefinedPaths = (obj: any, path: string = ''): string[] => {
+                let paths: string[] = [];
+                if (obj === undefined) return [path || 'root'];
+                if (obj === null || typeof obj !== 'object') return paths;
+
+                for (const key in obj) {
+                    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                        const currentPath = path ? `${path}.${key}` : key;
+                        if (obj[key] === undefined) {
+                            paths.push(currentPath);
+                        } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+                            paths.push(...findUndefinedPaths(obj[key], currentPath));
+                        }
+                    }
+                }
+                return paths;
+            };
+
             const updates: { updatedAt: ReturnType<typeof serverTimestamp>; title?: string; content?: unknown } = {
                 updatedAt: serverTimestamp(),
             };
+
             if (title !== undefined) updates.title = sanitizeTitle(title);
-            if (content !== undefined) updates.content = validateContent(content);
+            if (content !== undefined) {
+                // Debug logging to find the source of 'undefined' properties before they are stripped
+                const undefinedPaths = findUndefinedPaths(content, 'content');
+                if (undefinedPaths.length > 0) {
+                    console.warn(`[useUpdateNote] Found undefined values in payload at paths:`, undefinedPaths);
+                }
+
+                updates.content = validateContent(content);
+            }
 
             await updateDoc(docRef, updates);
             return { id, notebookId };
@@ -291,6 +324,12 @@ export function useUpdateNote() {
         // stale data before the write has propagated, causing data loss during rapid edits.
         onSuccess: () => {
             // No-op: rely on snapshot listeners and optimistic updates
+        },
+        onError: (err, newNote, context) => {
+            console.error('[useUpdateNote] Mutation failed! Rolling back optimistic update.', err);
+            if (context?.previousNote) {
+                queryClient.setQueryData(['note', newNote.id], context.previousNote);
+            }
         },
     });
 }
