@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import {
     FolderPlus, Book, Trash2, Edit2, Check, X,
     ChevronRight, ChevronDown, FileText, Plus,
-    RotateCcw, Loader2, FolderOpen
+    RotateCcw, Loader2, FolderOpen, Lock, Unlock
 } from 'lucide-react';
 import {
     useNotebooks,
@@ -56,6 +56,7 @@ interface DragItem {
 export function Sidebar() {
     const { user } = useAuth();
     const { data: notebooks, isLoading: notebooksLoading } = useNotebooks();
+    const { isPrivateSpaceUnlocked, setPinModalOpen, lockPrivateSpace } = useUIStore();
 
     // Local state for creating/editing notebooks
     const [isCreatingNotebook, setIsCreatingNotebook] = useState(false);
@@ -88,17 +89,23 @@ export function Sidebar() {
         })
     );
 
-    // Get root-level notebooks (no parent)
-    const rootNotebooks = useMemo(() => {
+    // Filter notebooks based on current space
+    const viewNotebooks = useMemo(() => {
         if (!notebooks) return [];
-        return notebooks.filter(nb => nb.parent_notebook_id === null);
-    }, [notebooks]);
+        return notebooks.filter(nb =>
+            isPrivateSpaceUnlocked ? nb.is_private === true : (nb.is_private === undefined || nb.is_private === false)
+        );
+    }, [notebooks, isPrivateSpaceUnlocked]);
 
-    // Create a map for quick child lookup
+    // Get root-level notebooks (no parent) from current view
+    const rootNotebooks = useMemo(() => {
+        return viewNotebooks.filter(nb => nb.parent_notebook_id === null);
+    }, [viewNotebooks]);
+
+    // Create a map for quick child lookup from current view
     const childrenMap = useMemo(() => {
-        if (!notebooks) return new Map<string, Notebook[]>();
         const map = new Map<string, Notebook[]>();
-        notebooks.forEach(nb => {
+        viewNotebooks.forEach(nb => {
             if (nb.parent_notebook_id) {
                 const children = map.get(nb.parent_notebook_id) || [];
                 children.push(nb);
@@ -106,7 +113,7 @@ export function Sidebar() {
             }
         });
         return map;
-    }, [notebooks]);
+    }, [viewNotebooks]);
 
     const handleCreateNotebook = async (parentId: string | null = null) => {
         if (!user || !newNotebookTitle.trim()) return;
@@ -115,6 +122,7 @@ export function Sidebar() {
                 user_id: user.uid,
                 title: newNotebookTitle.trim(),
                 parent_notebook_id: parentId,
+                is_private: isPrivateSpaceUnlocked,
             });
             setNewNotebookTitle('');
             setIsCreatingNotebook(false);
@@ -217,6 +225,7 @@ export function Sidebar() {
                 <RootDropZone
                     onAddClick={() => setIsCreatingNotebook(true)}
                     isDragging={!!activeItem}
+                    isPrivate={isPrivateSpaceUnlocked}
                 />
 
                 {/* Content */}
@@ -287,8 +296,28 @@ export function Sidebar() {
                             )}
 
                             {/* Trash Section */}
-                            <div className="mt-6 pt-2 border-t border-app-border/50">
-                                <WastebasketSection />
+                            {!isPrivateSpaceUnlocked && (
+                                <div className="mt-6 pt-2 border-t border-app-border/50">
+                                    <WastebasketSection />
+                                </div>
+                            )}
+
+                            {/* Private Space Toggle */}
+                            <div className={clsx(
+                                "mt-2 pt-2 border-t border-app-border/50 transition-colors select-none",
+                                isPrivateSpaceUnlocked && "pb-2"
+                            )}>
+                                <div
+                                    className={clsx(
+                                        "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
+                                        isPrivateSpaceUnlocked ? "text-purple-500 bg-purple-500/10" : "text-app-muted hover:text-purple-500 hover:bg-app-accent-bg"
+                                    )}
+                                    onClick={() => isPrivateSpaceUnlocked ? lockPrivateSpace() : setPinModalOpen(true)}
+                                >
+                                    <div className="w-4 flex-shrink-0" />
+                                    {isPrivateSpaceUnlocked ? <Unlock size={16} /> : <Lock size={16} />}
+                                    <span className="flex-1 text-sm font-medium">Private Space</span>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -319,7 +348,7 @@ export function Sidebar() {
 
 // --- Root Drop Zone Header ---
 
-function RootDropZone({ onAddClick, isDragging }: { onAddClick: () => void; isDragging: boolean }) {
+function RootDropZone({ onAddClick, isDragging, isPrivate }: { onAddClick: () => void; isDragging: boolean; isPrivate: boolean }) {
     const { setNodeRef, isOver } = useDroppable({
         id: 'root',
     });
@@ -334,7 +363,12 @@ function RootDropZone({ onAddClick, isDragging }: { onAddClick: () => void; isDr
             )}
         >
             <div className="flex items-center gap-2">
-                <h2 className="text-lg font-semibold text-app-text">Library</h2>
+                <h2 className={clsx(
+                    "text-lg font-semibold",
+                    isPrivate ? "bg-gradient-to-r from-purple-500 to-indigo-500 bg-clip-text text-transparent" : "text-app-text"
+                )}>
+                    {isPrivate ? "Private Library" : "Library"}
+                </h2>
                 {isOver && (
                     <span className="text-xs font-medium text-app-primary animate-fade-in">
                         (Drop to move to root)
@@ -412,6 +446,7 @@ function NotebookItem({
                 notebook_id: notebook.id,
                 title: 'Untitled Note',
                 content: [],
+                is_private: notebook.is_private, // Inherit private state
             });
         } catch (err) {
             console.error(err);

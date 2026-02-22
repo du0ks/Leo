@@ -11,11 +11,12 @@ import {
     Loader2,
     RotateCcw,
     Trash2,
-    AlertCircle
+    AlertCircle,
+    Lock
 } from 'lucide-react';
 
 export function MainView() {
-    const { selectedNoteId, selectedNotebookId, isTrashView } = useUIStore();
+    const { selectedNoteId, selectedNotebookId, isTrashView, isPrivateSpaceUnlocked, setPinModalOpen } = useUIStore();
     const { data: note, isLoading } = useNote(selectedNoteId, selectedNotebookId);
     const updateNote = useUpdateNote();
     const restoreNote = useRestoreNote();
@@ -240,6 +241,31 @@ export function MainView() {
     }
 
     const isTrashed = !!note?.deleted_at;
+
+    if (note?.is_private && !isPrivateSpaceUnlocked) {
+        return (
+            <div className="flex-1 flex flex-col items-center justify-center bg-app-bg text-center gap-4 animate-fade-in shadow-inner border-l border-app-border">
+                <div className="w-20 h-20 bg-purple-500/10 rounded-full flex items-center justify-center text-purple-500 mb-2 shadow-[0_0_30px_rgba(168,85,247,0.15)]">
+                    <Lock className="w-10 h-10" />
+                </div>
+                <div>
+                    <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-500 to-indigo-500 bg-clip-text text-transparent">
+                        Private Note Locked
+                    </h2>
+                    <p className="text-app-muted text-[15px] mt-2 max-w-sm mx-auto">
+                        This note is secure in your Private Space. Unlock the space to view or edit this note.
+                    </p>
+                </div>
+                <button
+                    onClick={() => setPinModalOpen(true)}
+                    className="mt-6 px-8 py-3 bg-app-surface border border-purple-500/30 hover:border-purple-500 hover:bg-purple-500/5 text-purple-400 font-medium rounded-xl transition-all shadow-lg shadow-purple-500/5 hover:shadow-purple-500/20 active:scale-95 flex items-center gap-2"
+                >
+                    <Lock className="w-4 h-4" />
+                    Enter PIN to Unlock
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div className="flex-1 flex flex-col bg-app-bg overflow-hidden transition-all duration-300">

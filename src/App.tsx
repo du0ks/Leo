@@ -11,6 +11,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { MainView } from './components/layout/MainView';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { SettingsModal } from './components/settings/SettingsModal';
+import { PinCodeModal } from './components/modals/PinCodeModal';
 import { LogOut, Menu, Loader2, Settings } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -30,7 +31,9 @@ function AppContent() {
     themeColor,
     sidebarOpen,
     toggleSidebar,
-    setSettingsOpen
+    setSettingsOpen,
+    pinModalOpen,
+    setPinModalOpen
   } = useUIStore();
 
   // Trigger background settings sync (never blocks - uses cached Zustand values)
@@ -129,6 +132,7 @@ function AppContent() {
       </div>
 
       <SettingsModal />
+      <PinCodeModal isOpen={pinModalOpen} onClose={() => setPinModalOpen(false)} />
     </div>
   );
 }

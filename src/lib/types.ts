@@ -14,6 +14,7 @@ export interface Notebook {
     created_at: string;
     updated_at: string;
     deleted_at: string | null; // Soft delete timestamp
+    is_private?: boolean;
 }
 
 export interface Note {
@@ -24,16 +25,19 @@ export interface Note {
     created_at: string;
     updated_at: string;
     deleted_at: string | null; // Soft delete timestamp
+    is_private?: boolean;
 }
 
 export interface NewNotebook {
     user_id: string;
     title?: string;
     parent_notebook_id?: string | null; // For creating sub-notebooks
+    is_private?: boolean;
 }
 
 export interface NewNote {
     notebook_id: string;
     title?: string;
     content?: unknown;
+    is_private?: boolean;
 }
