@@ -61,8 +61,47 @@ export function NoteEditor({ noteId, content, onChange, editable = true }: NoteE
         }
     }, [editor, handleChange]);
 
+    // Intercept Backspace to prevent outdenting empty lines from toggle lists
+    const handleKeyDownCapture = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (!editor || e.key !== 'Backspace') return;
+
+        try {
+            const cursor = editor.getTextCursorPosition();
+            if (!cursor || !cursor.block) return;
+
+            const { block, prevBlock } = cursor;
+
+            const b = block as any;
+            const isEmptyContent = !b.content ||
+                (Array.isArray(b.content) && b.content.length === 0) ||
+                (typeof b.content === 'string' && b.content === '');
+            const hasNoChildren = !b.children || b.children.length === 0;
+            const isEmpty = isEmptyContent && hasNoChildren;
+
+            if (!isEmpty) return;
+
+            // Check if inside a toggle block
+            const parent = editor.getParentBlock(block);
+            if (parent && parent.type === 'toggleListItem') {
+                e.preventDefault();
+                e.stopPropagation();
+
+                // Focus previous block so we don't lose focus
+                if (prevBlock) {
+                    editor.setTextCursorPosition(prevBlock, 'end');
+                } else {
+                    editor.setTextCursorPosition(parent, 'start');
+                }
+
+                editor.removeBlocks([block]);
+            }
+        } catch (err) {
+            // getTextCursorPosition throws if multiple blocks are selected or no text cursor
+        }
+    }, [editor]);
+
     return (
-        <div className="note-editor h-full overflow-auto">
+        <div className="note-editor h-full overflow-auto" onKeyDownCapture={handleKeyDownCapture}>
             <BlockNoteView
                 editor={editor}
                 editable={editable}
