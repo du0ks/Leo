@@ -10,7 +10,8 @@ import {
     deleteDoc,
     serverTimestamp,
     Timestamp,
-    onSnapshot
+    onSnapshot,
+    where
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import type { Notebook, NewNotebook } from '../lib/types';
@@ -91,12 +92,11 @@ export function useTrashedNotebooks() {
     return useQuery({
         queryKey: ['notebooks', 'trashed'],
         queryFn: async (): Promise<Notebook[]> => {
-            const q = query(getNotebooksRef());
+            const q = query(getNotebooksRef(), where('deletedAt', '!=', null));
             const snapshot = await getDocs(q);
 
             return snapshot.docs
                 .map(docSnap => parseNotebook(docSnap, auth.currentUser?.uid || ''))
-                .filter(nb => nb.deleted_at !== null)
                 .sort((a, b) => new Date(b.deleted_at!).getTime() - new Date(a.deleted_at!).getTime());
         },
         enabled: !!auth.currentUser,
@@ -119,8 +119,6 @@ async function getDescendantNotebookIds(notebookId: string, allNotebooks: Notebo
 
 // Create notebook (supports sub-notebooks)
 export function useCreateNotebook() {
-    const queryClient = useQueryClient();
-
     return useMutation({
         mutationFn: async (notebook: NewNotebook): Promise<Notebook> => {
             const safeTitle = sanitizeTitle(notebook.title || 'Untitled');
@@ -143,15 +141,13 @@ export function useCreateNotebook() {
             };
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notebooks'] });
+            // Real-time snapshot updates the list automatically
         },
     });
 }
 
 // Update notebook (title or parent)
 export function useUpdateNotebook() {
-    const queryClient = useQueryClient();
-
     return useMutation({
         mutationFn: async ({ id, title, parent_notebook_id }: {
             id: string;
@@ -167,15 +163,13 @@ export function useUpdateNotebook() {
             await updateDoc(docRef, updates);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notebooks'] });
+            // Real-time snapshot updates the list automatically
         },
     });
 }
 
 // Move notebook to different parent (or to root)
 export function useMoveNotebook() {
-    const queryClient = useQueryClient();
-
     return useMutation({
         mutationFn: async ({ id, newParentId }: { id: string; newParentId: string | null }) => {
             const docRef = doc(getNotebooksRef(), id);
@@ -185,7 +179,7 @@ export function useMoveNotebook() {
             });
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notebooks'] });
+            // Real-time snapshot updates the list automatically
         },
     });
 }
@@ -222,8 +216,8 @@ export function useSoftDeleteNotebook() {
             }
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notebooks'] });
-            queryClient.invalidateQueries({ queryKey: ['notes'] });
+            queryClient.invalidateQueries({ queryKey: ['notebooks', 'trashed'] });
+            queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
 }
@@ -260,8 +254,8 @@ export function useRestoreNotebook() {
             }
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notebooks'] });
-            queryClient.invalidateQueries({ queryKey: ['notes'] });
+            queryClient.invalidateQueries({ queryKey: ['notebooks', 'trashed'] });
+            queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
 }
@@ -298,7 +292,7 @@ export function usePermanentlyDeleteNotebook() {
             }
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notebooks'] });
+            queryClient.invalidateQueries({ queryKey: ['notebooks', 'trashed'] });
         },
     });
 }

@@ -12,7 +12,8 @@ import {
     writeBatch,
     serverTimestamp,
     Timestamp,
-    onSnapshot
+    onSnapshot,
+    where
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import type { Note, NewNote } from '../lib/types';
@@ -127,11 +128,12 @@ export function useTrashedNotes() {
             const notebooksRef = collection(db, 'users', userId, 'notebooks');
             const notebooksSnapshot = await getDocs(notebooksRef);
 
-            // 2. Fetch all notes from each notebook and filter in JS
+            // 2. Fetch ONLY deleted notes from each notebook using a query to save reads
             const allTrashedNotes: Note[] = [];
             for (const nbDoc of notebooksSnapshot.docs) {
                 const notesRef = collection(db, 'users', userId, 'notebooks', nbDoc.id, 'notes');
-                const snp = await getDocs(notesRef);
+                const trashedQuery = query(notesRef, where('deletedAt', '!=', null));
+                const snp = await getDocs(trashedQuery);
 
                 snp.docs.forEach(docSnap => {
                     const data = docSnap.data({ serverTimestamps: 'estimate' });
@@ -220,8 +222,6 @@ export function useNote(noteId: string | null, notebookId?: string | null) {
 
 // Mutations
 export function useCreateNote() {
-    const queryClient = useQueryClient();
-
     return useMutation({
         mutationFn: async (note: NewNote): Promise<Note> => {
             const safeTitle = sanitizeTitle(note.title || 'Untitled');
@@ -244,8 +244,8 @@ export function useCreateNote() {
                 deleted_at: null,
             };
         },
-        onSuccess: (_, variables) => {
-            queryClient.invalidateQueries({ queryKey: ['notes', variables.notebook_id] });
+        onSuccess: () => {
+            // Real-time snapshot handles note updates
         },
     });
 }
@@ -345,8 +345,8 @@ export function useSoftDeleteNote() {
             });
             return { id, notebookId };
         },
-        onSuccess: (data) => {
-            queryClient.invalidateQueries({ queryKey: ['notes', data.notebookId] });
+        onSuccess: () => {
+            // Active notes handle updates via onSnapshot, only manual fetch needs invalidation
             queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
@@ -363,8 +363,7 @@ export function useRestoreNote() {
             });
             return { id, notebookId };
         },
-        onSuccess: (data) => {
-            queryClient.invalidateQueries({ queryKey: ['notes', data.notebookId] });
+        onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
@@ -387,8 +386,6 @@ export function usePermanentlyDeleteNote() {
 
 // Move note to a different notebook
 export function useMoveNote() {
-    const queryClient = useQueryClient();
-
     return useMutation({
         mutationFn: async ({
             id,
@@ -432,9 +429,8 @@ export function useMoveNote() {
                 toNotebookId
             };
         },
-        onSuccess: (data) => {
-            queryClient.invalidateQueries({ queryKey: ['notes', data.fromNotebookId] });
-            queryClient.invalidateQueries({ queryKey: ['notes', data.toNotebookId] });
+        onSuccess: () => {
+            // Real-time snapshot handles re-fetching for active notebooks
         },
     });
 }
