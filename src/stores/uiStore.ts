@@ -12,8 +12,6 @@ interface UIState {
     darkMode: boolean;
     themeColor: ThemeColor;
     settingsOpen: boolean;
-    isPrivateSpaceUnlocked: boolean;
-    pinModalOpen: boolean;
 
     // Breadcrumb navigation for nested notebooks
     currentNotebookPath: string[]; // Array of notebook IDs from root to current
@@ -21,8 +19,6 @@ interface UIState {
     toggleSidebar: () => void;
     toggleNotebookExpand: (id: string, forceState?: boolean) => void;
     selectNote: (noteId: string | null, notebookId?: string | null, isTrash?: boolean) => void;
-    unlockPrivateSpace: () => void;
-    lockPrivateSpace: () => void;
 
     // Breadcrumb navigation
     navigateIntoNotebook: (notebookId: string) => void;
@@ -33,7 +29,6 @@ interface UIState {
     setDarkMode: (dark: boolean) => void;
     setThemeColor: (color: ThemeColor) => void;
     setSettingsOpen: (open: boolean) => void;
-    setPinModalOpen: (open: boolean) => void;
 }
 
 // Custom storage wrapper to handle Set serialization
@@ -45,7 +40,6 @@ const storage = {
         return {
             state: {
                 ...state,
-                isPrivateSpaceUnlocked: false, // Always lock on load/refresh
                 expandedNotebooks: new Set(state.expandedNotebooks || []),
                 currentNotebookPath: state.currentNotebookPath || [],
             },
@@ -54,7 +48,6 @@ const storage = {
     setItem: (name: string, value: any) => {
         const serializedState = {
             ...value.state,
-            isPrivateSpaceUnlocked: false, // Don't persist unlocked state
             expandedNotebooks: Array.from(value.state.expandedNotebooks),
             currentNotebookPath: value.state.currentNotebookPath || [],
         };
@@ -74,8 +67,6 @@ export const useUIStore = create<UIState>()(
             darkMode: true,
             themeColor: 'yellow',
             settingsOpen: false,
-            pinModalOpen: false,
-            isPrivateSpaceUnlocked: false,
             currentNotebookPath: [],
 
             toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -96,13 +87,6 @@ export const useUIStore = create<UIState>()(
                 selectedNoteId: noteId,
                 selectedNotebookId: notebookId ?? null,
                 isTrashView: isTrash
-            }),
-
-            unlockPrivateSpace: () => set({ isPrivateSpaceUnlocked: true }),
-            lockPrivateSpace: () => set({
-                isPrivateSpaceUnlocked: false,
-                // Optionally clear selected note if we want to force navigation out, 
-                // but MainView will handle hiding the content anyway.
             }),
 
             // Navigate into a notebook (push to path)
@@ -130,7 +114,6 @@ export const useUIStore = create<UIState>()(
             setDarkMode: (dark) => set({ darkMode: dark }),
             setThemeColor: (color) => set({ themeColor: color }),
             setSettingsOpen: (open) => set({ settingsOpen: open }),
-            setPinModalOpen: (open) => set({ pinModalOpen: open }),
         }),
         {
             name: 'leo-ui-storage',
