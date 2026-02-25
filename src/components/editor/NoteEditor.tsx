@@ -61,42 +61,84 @@ export function NoteEditor({ noteId, content, onChange, editable = true }: NoteE
         }
     }, [editor, handleChange]);
 
-    // Intercept Backspace to prevent outdenting empty lines from toggle lists
+    // Intercept Backspace & Enter
     const handleKeyDownCapture = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-        if (!editor || e.key !== 'Backspace') return;
+        if (!editor) return;
 
-        try {
-            const cursor = editor.getTextCursorPosition();
-            if (!cursor || !cursor.block) return;
+        if (e.key === 'Backspace') {
+            try {
+                const cursor = editor.getTextCursorPosition();
+                if (!cursor || !cursor.block) return;
 
-            const { block, prevBlock } = cursor;
+                const { block, prevBlock } = cursor;
 
-            const b = block as any;
-            const isEmptyContent = !b.content ||
-                (Array.isArray(b.content) && b.content.length === 0) ||
-                (typeof b.content === 'string' && b.content === '');
-            const hasNoChildren = !b.children || b.children.length === 0;
-            const isEmpty = isEmptyContent && hasNoChildren;
+                const b = block as any;
+                const isEmptyContent = !b.content ||
+                    (Array.isArray(b.content) && b.content.length === 0) ||
+                    (typeof b.content === 'string' && b.content === '');
+                const hasNoChildren = !b.children || b.children.length === 0;
+                const isEmpty = isEmptyContent && hasNoChildren;
 
-            if (!isEmpty) return;
+                if (!isEmpty) return;
 
-            // Check if inside a toggle block
-            const parent = editor.getParentBlock(block);
-            if (parent && parent.type === 'toggleListItem') {
-                e.preventDefault();
-                e.stopPropagation();
+                // Check if inside a toggle block
+                const parent = editor.getParentBlock(block);
+                if (parent && parent.type === 'toggleListItem') {
+                    e.preventDefault();
+                    e.stopPropagation();
 
-                // Focus previous block so we don't lose focus
-                if (prevBlock) {
-                    editor.setTextCursorPosition(prevBlock, 'end');
-                } else {
-                    editor.setTextCursorPosition(parent, 'start');
+                    // Focus previous block so we don't lose focus
+                    if (prevBlock) {
+                        editor.setTextCursorPosition(prevBlock, 'end');
+                    } else {
+                        editor.setTextCursorPosition(parent, 'start');
+                    }
+
+                    editor.removeBlocks([block]);
                 }
-
-                editor.removeBlocks([block]);
+            } catch (err) {
+                // getTextCursorPosition throws if multiple blocks are selected or no text cursor
             }
-        } catch (err) {
-            // getTextCursorPosition throws if multiple blocks are selected or no text cursor
+            return;
+        }
+
+        if (e.key === 'Enter') {
+            try {
+                const cursor = editor.getTextCursorPosition();
+                if (!cursor || !cursor.block) return;
+                const { block } = cursor;
+
+                // When pressing Enter at the end of a toggle list with children,
+                // prevent BlockNote from stealing the children into the new block.
+                // We create a new empty toggle block below instead.
+                if (block.type === 'toggleListItem' && block.children && block.children.length > 0) {
+                    const tiptap = (editor as any)._tiptapEditor;
+                    if (tiptap && tiptap.state) {
+                        const { selection } = tiptap.state;
+                        if (selection.empty) {
+                            const { $head } = selection;
+                            // Check if cursor is at the end of the text node
+                            const isAtEnd = $head.parentOffset === $head.parent.content.size;
+
+                            if (isAtEnd) {
+                                e.preventDefault();
+                                e.stopPropagation();
+
+                                const inserted = editor.insertBlocks(
+                                    [{ type: 'toggleListItem', content: [] }],
+                                    block,
+                                    'after'
+                                );
+                                if (inserted && inserted.length > 0) {
+                                    editor.setTextCursorPosition(inserted[0], 'start');
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                // ignore
+            }
         }
     }, [editor]);
 
