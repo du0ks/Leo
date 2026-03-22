@@ -237,7 +237,7 @@ export function Sidebar() {
                                     isEditing={editingNotebookId === notebook.id}
                                     editTitle={editNotebookTitle}
                                     onEditChange={setEditNotebookTitle}
-                                    onEditSubmit={() => handleRenameNotebook(notebook.id)}
+                                    onEditSubmit={(id: string) => handleRenameNotebook(id)}
                                     onEditCancel={() => setEditingNotebookId(null)}
                                     onStartEdit={(id: string, title: string) => {
                                         setEditingNotebookId(id);
@@ -362,7 +362,7 @@ interface NotebookItemProps {
     isEditing: boolean;
     editTitle: string;
     onEditChange: (val: string) => void;
-    onEditSubmit: () => void;
+    onEditSubmit: (id: string) => void;
     onEditCancel: () => void;
     onStartEdit: (id: string, title: string) => void;
     onDelete: (id: string, e: React.MouseEvent) => void;
@@ -439,11 +439,11 @@ function NotebookItem({
                     value={editTitle}
                     onChange={(e) => onEditChange(e.target.value)}
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter') onEditSubmit();
+                        if (e.key === 'Enter') onEditSubmit(notebook.id);
                         if (e.key === 'Escape') onEditCancel();
                     }}
                 />
-                <ActionIcon size="sm" color="green" variant="subtle" onClick={onEditSubmit}>
+                <ActionIcon size="sm" color="green" variant="subtle" onClick={() => onEditSubmit(notebook.id)}>
                     <Check size={14} />
                 </ActionIcon>
                 <ActionIcon size="sm" color="red" variant="subtle" onClick={onEditCancel}>
