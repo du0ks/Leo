@@ -1,149 +1,97 @@
-<div align="center">
-  # 🦁 LEO
-  ### Organize. Clarify. Create.
+# Leo
 
-  [![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
-  [![Typescript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-  [![Tauri](https://img.shields.io/badge/Tauri-FFC131?style=for-the-badge&logo=tauri&logoColor=24C8DB)](https://tauri.app/)
-  [![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
-  [![Firebase](https://img.shields.io/badge/Firebase-039BE5?style=for-the-badge&logo=Firebase&logoColor=white)](https://firebase.google.com/)
+A block-based note-taking app that runs in the browser, as an installable PWA, and as a Tauri desktop app, with notes synced through Firebase.
 
-  **Leo** is a modern, high-performance, and decentralized note-taking application built for the next generation of creative thinkers. Combining the power of block-based editing with the speed of native desktop applications.
+Live version: https://leo-notes.web.app (deployed to Firebase Hosting from `main` by GitHub Actions)
 
-  [Explore Features](#-features) • [Installation](#-getting-started) • [Tech Stack](#%EF%B8%8F-tech-stack)
-</div>
+## Why I built it
 
-<hr />
+I wanted a Notion-style editor for my own notes, organized in nested notebooks, that works the same on my laptop and my phone and keeps working when I'm offline.
 
-## ✨ Features
+## What it does
 
-- **📦 Block-Based Editing**: powered by [BlockNote](https://www.blocknotejs.org/), offering a Notion-like experience with blocks for text, images, lists, and more.
-- **⚡ Native Performance**: Built with **Tauri**, providing a lightweight and blazing-fast desktop experience on Windows, macOS, and Linux.
-- **🔄 Real-time Sync**: Seamless data synchronization across devices using **Firebase**, ensuring your notes are always up to date.
-- **🎨 Premium UI/UX**: A stunning, modern interface built with **Mantine** and **Tailwind CSS**, featuring glassmorphism and smooth transitions.
-- **📱 PWA Support**: Install Leo as a Progressive Web App for a consistent experience on mobile and web.
-- **🔒 Secure & Private**: Your data is yours. Enterprise-grade security via Firebase Authentication and Firestore.
+- Block editor (BlockNote) for notes: headings, lists, toggle lists and the rest of the default BlockNote blocks. I patched Enter and Backspace handling inside toggle lists so child blocks are not lost or outdented by accident.
+- Notebooks can be nested. The sidebar shows them as a tree, and I can drag notes between notebooks or drag a notebook into another one. Dropping a notebook into one of its own descendants is blocked.
+- Deleting is a soft delete. Deleted notes and notebooks go to a Trash view where they can be previewed read-only, restored or deleted for good.
+- Edits are saved automatically with a 1.5 second debounce. A status indicator shows when the app is offline.
+- Email/password sign-up, sign-in and password reset with Firebase Auth.
+- Light and dark mode plus eight accent colors. The choice is stored in the user's Firestore profile, so it follows the account.
+- Installable as a PWA. When a new build is deployed, the app shows an update prompt instead of silently serving the old cache. There is also a small recovery script in `main.tsx` that runs outside React to clear a broken cached service worker.
 
-<hr />
+## How it works
 
-## 🎨 Themes
+- All data lives in Firestore under `users/{uid}/notebooks/{notebookId}/notes/{noteId}`. Note content is stored as BlockNote JSON.
+- Firestore is initialized with persistent local cache (IndexedDB, multi-tab), so notes load and can be edited offline and sync when the connection comes back.
+- Hooks in `src/hooks` wrap Firestore reads and writes in TanStack Query mutations. Lists are kept up to date with `onSnapshot` real-time listeners.
+- Moving a note between notebooks copies it to the new subcollection and deletes the old one in a single batch write.
+- `firestore.rules` denies everything by default, only lets a signed-in user read and write their own `users/{uid}` tree, and validates titles (string, max 200 chars) and allowed profile fields.
+- UI state (selected note, expanded notebooks, theme) is in a Zustand store persisted to `localStorage`.
+- The Tauri app loads the same Vite build. The Rust side is still the default Tauri template; there are no custom native commands yet.
 
-Leo is designed to be as easy on the eyes as it is on the mind. Choose from a variety of handcrafted themes to suit your workspace vibe:
+## Tech stack
 
-<div align="center">
-  <table>
-    <tr>
-      <td align="center"><b>Purple Light</b></td>
-      <td align="center"><b>Deep Purple (Dark)</b></td>
-      <td align="center"><b>Forest / Sepia</b></td>
-    </tr>
-    <tr>
-      <td><img src="assets/theme_light.png" width="300" style="border-radius: 8px;"></td>
-      <td><img src="assets/theme_dark.png" width="300" style="border-radius: 8px;"></td>
-      <td><img src="assets/theme_forest.png" width="300" style="border-radius: 8px;"></td>
-    </tr>
-    <tr>
-      <td align="center"><b>Emerald Green</b></td>
-      <td align="center"><b>Rose Pink</b></td>
-      <td align="center"><b>Sky Blue</b></td>
-    </tr>
-    <tr>
-      <td><img src="assets/theme_green.png" width="300" style="border-radius: 8px;"></td>
-      <td><img src="assets/theme_pink.png" width="300" style="border-radius: 8px;"></td>
-      <td><img src="assets/theme_lightblue.png" width="300" style="border-radius: 8px;"></td>
-    </tr>
-  </table>
+React 19, TypeScript, Vite, BlockNote, Mantine, Tailwind CSS 4, dnd-kit, Zustand, TanStack Query, Firebase (Auth, Firestore, Hosting), vite-plugin-pwa, Tauri 2.
 
-  <p><i>...and many more customization options available in settings!</i></p>
-</div>
+## Screenshots
 
-<hr />
+| | |
+|---|---|
+| ![Light theme](assets/theme_light.png) | ![Dark theme](assets/theme_dark.png) |
+| ![Green accent](assets/theme_green.png) | ![Pink accent](assets/theme_pink.png) |
 
-## 🛠️ Tech Stack
+## Running it
 
-### **Frontend**
-- **React 19**: The core UI library.
-- **TypeScript**: Ensuring type safety and robust code.
-- **Tailwind CSS & PostCSS**: Modern utility-first styling.
-- **Mantine UI**: Comprehensive component library for a polished look.
-- **Zustand**: Lightweight and scalable state management.
-- **React Query**: Efficient server-state handling.
+Requirements: Node.js (CI uses Node 22) and, for the desktop build, Rust and the Tauri prerequisites.
 
-### **Desktop**
-- **Tauri**: The foundation for our native desktop application.
-- **Rust**: High-performance backend logic for the desktop layer.
+1. Create a Firebase project with Email/Password auth and Firestore enabled, and register a web app.
+2. Create a `.env` file in the project root. The app throws on startup if any of these are missing:
 
-### **Backend & Infrastructure**
-- **Firebase**: Authentication, Firestore (database), and Hosting.
-- **Vite**: Ultra-fast build tool and development server.
-
-<hr />
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) (v18 or higher)
-- [Rust](https://www.rust-lang.org/) (for Tauri desktop builds)
-- [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/du0ks/Leo.git
-   cd Leo
+   ```env
+   VITE_FIREBASE_API_KEY=
+   VITE_FIREBASE_AUTH_DOMAIN=
+   VITE_FIREBASE_PROJECT_ID=
+   VITE_FIREBASE_STORAGE_BUCKET=
+   VITE_FIREBASE_MESSAGING_SENDER_ID=
+   VITE_FIREBASE_APP_ID=
    ```
 
-2. **Install dependencies**
+3. Install and run:
+
    ```bash
    npm install
+   npm run dev          # web, http://127.0.0.1:1420
+   npm run tauri dev    # desktop window
    ```
 
-3. **Configure Firebase**
-   - Create a project in [Firebase Console](https://console.firebase.google.com/).
-   - Add a Web App and copy your configuration.
-   - Create a `.env` file in the root and add your keys:
-     ```env
-     VITE_FIREBASE_API_KEY=your_api_key
-     VITE_FIREBASE_AUTH_DOMAIN=your_auth_domain
-     VITE_FIREBASE_PROJECT_ID=your_project_id
-     VITE_FIREBASE_STORAGE_BUCKET=your_storage_bucket
-     VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
-     VITE_FIREBASE_APP_ID=your_app_id
-     ```
+4. Build:
 
-4. **Run in development mode**
-   - For Web:
-     ```bash
-     npm run dev
-     ```
-   - For Desktop:
-     ```bash
-     npm run tauri dev
-     ```
+   ```bash
+   npm run build        # web build in dist/
+   npm run tauri build  # desktop installers
+   ```
 
-<hr />
+To deploy the rules and hosting to your own project, change the project id in `.firebaserc` and run `npx firebase deploy`.
 
-## 🛠️ Build for Production
+## Project structure
 
-- **Desktop (All Platforms)**:
-  ```bash
-  npm run tauri build
-  ```
-- **Web App**:
-  ```bash
-  npm run build
-  ```
+```
+src/
+  components/   auth, editor, layout (Sidebar, MainView), settings, ui
+  hooks/        Firestore data hooks (notes, notebooks, auth, settings)
+  stores/       Zustand UI store
+  lib/          Firebase init and types
+src-tauri/      Tauri desktop shell
+firestore.rules Firestore security rules
+```
 
-<hr />
+## Limitations
 
-## 📄 License
+- No search across notes yet.
+- No file upload, so images can only be added by URL.
+- Notes and notebooks are sorted alphabetically only.
+- The desktop app is a plain wrapper around the web build.
+- There are no automated tests.
 
-Distributed under the MIT License. See `LICENSE` for more information.
+## License
 
-<hr />
-
-<div align="center">
-  Made with ❤️ by [du0ks](https://github.com/du0ks)
-</div>
+MIT
