@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, createContext, useContext, lazy, Suspense } from 'react';
 import {
     FolderPlus, Book, Trash2, Edit2, Check, X,
     ChevronRight, ChevronDown, FileText, Plus,
-    RotateCcw, Loader2, FolderOpen
+    RotateCcw, Loader2, FolderOpen, MoreHorizontal
 } from 'lucide-react';
 import {
     useNotebooks,
@@ -31,6 +31,33 @@ import clsx from 'clsx';
 import { ActionIcon } from '@mantine/core';
 import type { Notebook, Note } from '../../lib/types';
 import { flushPendingSaves } from '../../lib/pendingSaves';
+import { DeleteButton } from '../ui/rareui/LazyDeleteButton';
+import type { ActionTarget } from './ItemActionsDrawer';
+
+// Only needed on touch layouts, and only once a "⋯" button is tapped
+const ItemActionsDrawer = lazy(() => import('./ItemActionsDrawer').then((m) => ({ default: m.ItemActionsDrawer })));
+
+/** Opens the mobile actions drawer for a note or notebook. */
+const OpenActionsContext = createContext<(target: ActionTarget) => void>(() => {});
+
+/** "⋯" button shown instead of hover actions below the lg breakpoint (touch devices). */
+function MobileActionsButton({ label, onOpen }: { label: string; onOpen: () => void }) {
+    return (
+        <button
+            type="button"
+            aria-label={label}
+            title={label}
+            className="lg:hidden -my-1 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-app-muted active:bg-app-accent-bg"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+                e.stopPropagation();
+                onOpen();
+            }}
+        >
+            <MoreHorizontal size={18} />
+        </button>
+    );
+}
 
 const errorMessage = (err: unknown, fallback: string) =>
     err instanceof Error && err.message ? err.message : fallback;
@@ -147,17 +174,22 @@ export function Sidebar() {
         }
     };
 
-    const handleDeleteNotebook = async (id: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (confirm('Move this notebook to trash? All its notes and sub-notebooks will also be trashed.')) {
-            flushPendingSaves();
-            try {
-                await softDeleteNotebook.mutateAsync(id);
-            } catch (err) {
-                console.error('Failed to trash notebook:', err);
-                window.alert('Could not move notebook to trash: ' + errorMessage(err, 'Please try again.'));
-            }
+    const handleDeleteNotebook = async (id: string) => {
+        flushPendingSaves();
+        try {
+            await softDeleteNotebook.mutateAsync(id);
+        } catch (err) {
+            console.error('Failed to trash notebook:', err);
+            window.alert('Could not move notebook to trash: ' + errorMessage(err, 'Please try again.'));
         }
+    };
+
+    // Mobile actions drawer (kept mounted while closing so it can animate out)
+    const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
+    const [actionsOpen, setActionsOpen] = useState(false);
+    const openActions = (target: ActionTarget) => {
+        setActionTarget(target);
+        setActionsOpen(true);
     };
 
     // Drag handlers
@@ -236,6 +268,7 @@ export function Sidebar() {
     };
 
     return (
+        <OpenActionsContext.Provider value={openActions}>
         <DndContext
             sensors={sensors}
             modifiers={[snapCenterToCursor]}
@@ -344,6 +377,19 @@ export function Sidebar() {
                 )}
             </DragOverlay>
         </DndContext>
+
+        {actionTarget && (
+            <Suspense fallback={null}>
+                <ItemActionsDrawer
+                    target={actionTarget}
+                    open={actionsOpen}
+                    onOpenChange={setActionsOpen}
+                    notebooks={notebooks ?? []}
+                    childrenMap={childrenMap}
+                />
+            </Suspense>
+        )}
+        </OpenActionsContext.Provider>
     );
 }
 
@@ -395,7 +441,7 @@ interface NotebookItemProps {
     onEditSubmit: (id: string) => void;
     onEditCancel: () => void;
     onStartEdit: (id: string, title: string) => void;
-    onDelete: (id: string, e: React.MouseEvent) => void;
+    onDelete: (id: string) => void;
     onCreateSubNotebook: (parentId: string) => void;
     isCreatingSubNotebook: string | null;
     newNotebookTitle: string;
@@ -412,6 +458,8 @@ function NotebookItem({
 }: NotebookItemProps) {
     const isExpanded = useUIStore((state) => state.expandedNotebooks.has(notebook.id));
     const toggleNotebookExpand = useUIStore((state) => state.toggleNotebookExpand);
+    const openActions = useContext(OpenActionsContext);
+    const [deleteOpen, setDeleteOpen] = useState(false);
 
     // Only subscribe to a notebook's notes while it is expanded
     const { data: notes, isLoading: notesLoading } = useNotes(notebook.id, isExpanded);
@@ -519,10 +567,14 @@ function NotebookItem({
                     isExpanded && "truncate"
                 )}>{notebook.title}</span>
 
-                {/* Action Buttons */}
+                {/* Action Buttons (desktop: hover icons; mobile: ⋯ opens the drawer) */}
+                <MobileActionsButton
+                    label={`Actions for ${notebook.title}`}
+                    onOpen={() => openActions({ type: 'notebook', notebook })}
+                />
                 <div className={clsx(
-                    "flex items-center gap-0.5 transition-opacity",
-                    isExpanded ? "opacity-100" : "opacity-0 lg:group-hover:opacity-100"
+                    "hidden lg:flex items-center gap-0.5 transition-opacity",
+                    isExpanded || deleteOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
                 )}>
                     <ActionIcon
                         size="xs"
@@ -551,15 +603,13 @@ function NotebookItem({
                     >
                         <Edit2 size={12} />
                     </ActionIcon>
-                    <ActionIcon
-                        size="xs"
-                        variant="subtle"
-                        color="red"
-                        onClick={(e) => onDelete(notebook.id, e)}
-                        title="Delete"
-                    >
-                        <Trash2 size={12} />
-                    </ActionIcon>
+                    <DeleteButton
+                        size="sm"
+                        label="Move to trash"
+                        confirmLabel="Move notebook and its contents to trash"
+                        onOpenChange={setDeleteOpen}
+                        onConfirm={() => onDelete(notebook.id)}
+                    />
                 </div>
             </div>
 
@@ -649,6 +699,8 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
     const selectedNoteId = useUIStore((state) => state.selectedNoteId);
     const selectNote = useUIStore((state) => state.selectNote);
     const softDeleteNote = useSoftDeleteNote();
+    const openActions = useContext(OpenActionsContext);
+    const [deleteOpen, setDeleteOpen] = useState(false);
 
     // Draggable for the note
     const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -661,19 +713,16 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
         } as DragItem,
     });
 
-    const handleDelete = async (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (confirm('Move note to trash?')) {
-            if (selectedNoteId === note.id) {
-                flushPendingSaves();
-                selectNote(null, null);
-            }
-            try {
-                await softDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
-            } catch (err) {
-                console.error('Failed to trash note:', err);
-                window.alert('Could not move note to trash: ' + errorMessage(err, 'Please try again.'));
-            }
+    const handleDelete = async () => {
+        if (selectedNoteId === note.id) {
+            flushPendingSaves();
+            selectNote(null, null);
+        }
+        try {
+            await softDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+        } catch (err) {
+            console.error('Failed to trash note:', err);
+            window.alert('Could not move note to trash: ' + errorMessage(err, 'Please try again.'));
         }
     };
 
@@ -701,16 +750,22 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
                 "flex-1",
                 selectedNoteId === note.id && "truncate"
             )}>{note.title || 'Untitled'}</span>
-            <button
-                className={clsx(
-                    "p-1 text-app-muted hover:text-red-500 transition-all",
-                    selectedNoteId === note.id ? "opacity-100" : "opacity-0 lg:group-hover:opacity-100"
-                )}
-                onClick={handleDelete}
-                title="Move to Trash"
-            >
-                <Trash2 size={12} />
-            </button>
+            <MobileActionsButton
+                label={`Actions for ${note.title || 'Untitled'}`}
+                onOpen={() => openActions({ type: 'note', note })}
+            />
+            <div className={clsx(
+                "hidden lg:flex -my-1 transition-opacity",
+                selectedNoteId === note.id || deleteOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+            )}>
+                <DeleteButton
+                    size="sm"
+                    label="Move to trash"
+                    confirmLabel="Move note to trash"
+                    onOpenChange={setDeleteOpen}
+                    onConfirm={handleDelete}
+                />
+            </div>
         </div>
     );
 }
@@ -758,8 +813,6 @@ function WastebasketSection() {
     };
 
     const handleClearWastebasket = async () => {
-        if (!confirm("Permanently delete ALL items in the wastebasket? This cannot be undone.")) return;
-
         if (useUIStore.getState().isTrashView) selectNote(null, null);
         const results = await Promise.allSettled([
             ...(trashedNotebooks || []).map((nb) => permDeleteNotebook.mutateAsync(nb.id)),
@@ -783,7 +836,6 @@ function WastebasketSection() {
     };
 
     const handlePermDeleteNote = async (note: Note) => {
-        if (!confirm("Delete note permanently? This cannot be undone.")) return;
         if (selectedNoteId === note.id) selectNote(null, null);
         try {
             await permDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
@@ -803,7 +855,6 @@ function WastebasketSection() {
     };
 
     const handlePermDeleteNotebook = async (notebookId: string) => {
-        if (!confirm("Delete notebook and ALL its notes permanently? This cannot be undone.")) return;
         if (useUIStore.getState().selectedNotebookId === notebookId) selectNote(null, null);
         try {
             await permDeleteNotebook.mutateAsync(notebookId);
@@ -829,13 +880,12 @@ function WastebasketSection() {
                 {totalTrashed > 0 && (
                     <div className="flex items-center gap-1">
                         <span className="text-xs bg-app-border px-1.5 rounded-full">{totalTrashed}</span>
-                        <button
-                            title="Clear Wastebasket"
-                            onClick={(e) => { e.stopPropagation(); handleClearWastebasket(); }}
-                            className="p-1 text-red-500 hover:bg-red-500/10 rounded"
-                        >
-                            <X size={14} />
-                        </button>
+                        <DeleteButton
+                            size="sm"
+                            label="Empty wastebasket"
+                            confirmLabel="Permanently delete everything in the wastebasket"
+                            onConfirm={handleClearWastebasket}
+                        />
                     </div>
                 )}
             </div>
@@ -871,16 +921,12 @@ function WastebasketSection() {
                                             >
                                                 <RotateCcw size={12} />
                                             </button>
-                                            <button
-                                                title="Delete Permanently"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handlePermDeleteNotebook(notebook.id);
-                                                }}
-                                                className="p-1 text-red-500 hover:bg-red-500/10 rounded"
-                                            >
-                                                <X size={12} />
-                                            </button>
+                                            <DeleteButton
+                                                size="sm"
+                                                label="Delete permanently"
+                                                confirmLabel="Permanently delete notebook and all its notes"
+                                                onConfirm={() => handlePermDeleteNotebook(notebook.id)}
+                                            />
                                         </div>
                                     </div>
 
@@ -937,16 +983,12 @@ function WastebasketSection() {
                                                 >
                                                     <RotateCcw size={12} />
                                                 </button>
-                                                <button
-                                                    title="Delete Forever"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handlePermDeleteNote(note);
-                                                    }}
-                                                    className="p-1 text-red-500 hover:bg-red-500/10 rounded"
-                                                >
-                                                    <X size={12} />
-                                                </button>
+                                                <DeleteButton
+                                                    size="sm"
+                                                    label="Delete permanently"
+                                                    confirmLabel="Permanently delete note"
+                                                    onConfirm={() => handlePermDeleteNote(note)}
+                                                />
                                             </div>
                                         </div>
                                     ))}

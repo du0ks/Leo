@@ -1,7 +1,10 @@
 @import "tailwindcss";
 
-/* Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
+/* Inter is self-hosted (bundled via @blocknote/core/fonts/inter.css in main.tsx):
+   no request to Google Fonts, and it complies with the CSP. */
+
+/* Leo toggles dark mode with a `.dark` class on <html>, not the OS setting */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --font-family-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
