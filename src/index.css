@@ -551,3 +551,41 @@ button:focus-visible {
     opacity: 0.3;
   }
 }
+/* Sidebar row actions (desktop): overlay the end of the row on hover/focus
+   instead of reserving space, so titles use the full width otherwise.
+   Background = the row's tint over the surface, fading in from the left so
+   the title underneath ends softly. */
+.row-actions {
+  display: none;
+}
+@media (min-width: 1024px) {
+  .row-actions {
+    display: flex;
+    align-items: center;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0.25rem;
+    padding-left: 1.5rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    background:
+      linear-gradient(90deg, transparent, var(--row-tint, transparent) 1.25rem),
+      linear-gradient(90deg, transparent, var(--surface) 1.25rem);
+  }
+  .group:hover > .row-actions,
+  .row-actions:focus-within,
+  .row-actions-open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* Scrollable without a visible scrollbar */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

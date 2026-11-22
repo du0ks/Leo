@@ -1,4 +1,4 @@
-import { useState, useMemo, createContext, useContext, lazy, Suspense } from 'react';
+import { useState, useMemo, useRef, createContext, useContext, lazy, Suspense } from 'react';
 import {
     FolderPlus, Book, Trash2, Edit2, Check, X,
     ChevronRight, ChevronDown, FileText, Plus,
@@ -39,6 +39,28 @@ const ItemActionsDrawer = lazy(() => import('./ItemActionsDrawer').then((m) => (
 
 /** Opens the mobile actions drawer for a note or notebook. */
 const OpenActionsContext = createContext<(target: ActionTarget) => void>(() => {});
+
+/**
+ * Notes are sorted by title, so typing a title used to make the note jump
+ * around the list on every save. While a note's title input is focused, keep
+ * the list in its previous order (new notes are appended); re-sort on blur.
+ */
+function useStableOrderWhileTitleEditing(notes: Note[] | undefined): Note[] | undefined {
+    const focusedId = useUIStore((s) => s.titleFocusedNoteId);
+    const orderRef = useRef<string[] | null>(null);
+    return useMemo(() => {
+        if (!notes) return notes;
+        const editingHere = focusedId !== null && notes.some((n) => n.id === focusedId);
+        if (!editingHere || !orderRef.current) {
+            orderRef.current = notes.map((n) => n.id);
+            return notes;
+        }
+        const rank = new Map(orderRef.current.map((id, i) => [id, i]));
+        return [...notes].sort(
+            (a, b) => (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER)
+        );
+    }, [notes, focusedId]);
+}
 
 /** "⋯" button shown instead of hover actions below the lg breakpoint (touch devices). */
 function MobileActionsButton({ label, onOpen }: { label: string; onOpen: () => void }) {
@@ -144,19 +166,17 @@ export function Sidebar() {
     }, [notebooks]);
 
     const handleCreateNotebook = async (parentId: string | null = null) => {
-        if (!user || !newNotebookTitle.trim()) return;
+        const title = newNotebookTitle.trim();
+        if (!user || !title) return;
+        // Close the input in the same moment the new notebook appears (optimistic)
+        setNewNotebookTitle('');
+        setIsCreatingNotebook(false);
+        setIsCreatingSubNotebook(null);
         try {
-            await createNotebook.mutateAsync({
-                user_id: user.uid,
-                title: newNotebookTitle.trim(),
-                parent_notebook_id: parentId,
-            });
-            setNewNotebookTitle('');
-            setIsCreatingNotebook(false);
-            setIsCreatingSubNotebook(null);
-        } catch (error: any) {
-            console.error('Failed to create notebook:', error);
-            window.alert('Error creating notebook: ' + (error.message || 'Check your internet or Firestore rules.'));
+            await createNotebook.mutateAsync({ user_id: user.uid, title, parent_notebook_id: parentId });
+        } catch (err) {
+            console.error('Failed to create notebook:', err);
+            window.alert('Could not create notebook: ' + errorMessage(err, 'Please try again.'));
         }
     };
 
@@ -165,9 +185,9 @@ export function Sidebar() {
             setEditingNotebookId(null);
             return;
         }
+        setEditingNotebookId(null);
         try {
             await updateNotebook.mutateAsync({ id, title: editNotebookTitle.trim() });
-            setEditingNotebookId(null);
         } catch (err) {
             console.error('Failed to rename notebook:', err);
             window.alert('Could not rename notebook: ' + errorMessage(err, 'Please try again.'));
@@ -275,7 +295,7 @@ export function Sidebar() {
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
         >
-            <div className="w-64 h-full bg-app-surface border-r border-app-border flex flex-col">
+            <div className="w-full h-full bg-app-surface border-r border-app-border flex flex-col">
                 {/* Header */}
                 <RootDropZone
                     onAddClick={() => setIsCreatingNotebook(true)}
@@ -283,7 +303,7 @@ export function Sidebar() {
                 />
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
+                <div className="flex-1 overflow-y-auto p-2 no-scrollbar">
                     {notebooksLoading ? (
                         <div className="flex justify-center py-4">
                             <Loader2 className="animate-spin text-app-muted" size={20} />
@@ -460,9 +480,18 @@ function NotebookItem({
     const toggleNotebookExpand = useUIStore((state) => state.toggleNotebookExpand);
     const openActions = useContext(OpenActionsContext);
     const [deleteOpen, setDeleteOpen] = useState(false);
+    // Animate the contents only when the user expands the notebook — not when
+    // the item re-mounts (e.g. after being moved), which made contents
+    // visibly disappear and slide back in.
+    const animateExpandRef = useRef(false);
+    const toggleExpand = () => {
+        animateExpandRef.current = true;
+        toggleNotebookExpand(notebook.id);
+    };
 
     // Only subscribe to a notebook's notes while it is expanded
-    const { data: notes, isLoading: notesLoading } = useNotes(notebook.id, isExpanded);
+    const { data: sortedNotes, isLoading: notesLoading } = useNotes(notebook.id, isExpanded);
+    const notes = useStableOrderWhileTitleEditing(sortedNotes);
     // Lists are usually prefetched; only show a spinner if loading is noticeable
     const showNotesSpinner = useDelayedFlag(notesLoading);
     const createNote = useCreateNote();
@@ -511,8 +540,9 @@ function NotebookItem({
         setDropRef(el);
     };
 
-    if (isEditing) {
-        return (
+    // Rename input replaces only the row itself, so the notebook's notes and
+    // sub-notebooks stay on screen instead of disappearing while editing.
+    const editRow = isEditing ? (
             <div className="px-2 py-1 flex items-center gap-1" style={{ paddingLeft: `${8 + depth * 16}px` }}>
                 <input
                     autoFocus
@@ -531,23 +561,23 @@ function NotebookItem({
                     <X size={14} />
                 </ActionIcon>
             </div>
-        );
-    }
+    ) : null;
 
     return (
         <div className="select-none">
+            {editRow ?? (
             <div
                 ref={combineRefs}
                 {...attributes}
                 {...listeners}
                 className={clsx(
-                    "group flex items-center gap-2 py-1.5 rounded-md cursor-pointer text-app-text transition-colors",
+                    "group relative flex items-center gap-2 py-1.5 rounded-md cursor-pointer text-app-text transition-colors [--row-tint:var(--accent-bg)]",
                     isOver && !isDragging && "bg-app-primary/20 ring-1 ring-app-primary",
                     isDragging && "opacity-40",
                     !isOver && !isDragging && "hover:bg-app-accent-bg"
                 )}
                 style={{ paddingLeft: `${8 + depth * 16}px`, paddingRight: '8px' }}
-                onClick={() => toggleNotebookExpand(notebook.id)}
+                onClick={toggleExpand}
             >
                 {/* Expand/Collapse Chevron */}
                 <div className="text-app-muted group-hover:text-app-primary transition-colors w-4 flex-shrink-0">
@@ -561,21 +591,17 @@ function NotebookItem({
                     <Book size={16} className="text-app-primary/80 flex-shrink-0" />
                 )}
 
-                {/* Title - only truncate when expanded (icons visible) */}
-                <span className={clsx(
-                    "flex-1 text-sm font-medium",
-                    isExpanded && "truncate"
-                )}>{notebook.title}</span>
+                {/* Title: always one line, ellipsis when too long (full title on hover) */}
+                <span className="flex-1 min-w-0 truncate text-sm font-medium" title={notebook.title}>{notebook.title}</span>
 
                 {/* Action Buttons (desktop: hover icons; mobile: ⋯ opens the drawer) */}
                 <MobileActionsButton
                     label={`Actions for ${notebook.title}`}
                     onOpen={() => openActions({ type: 'notebook', notebook })}
                 />
-                <div className={clsx(
-                    "hidden lg:flex items-center gap-0.5 transition-opacity",
-                    isExpanded || deleteOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
-                )}>
+                {/* Desktop actions overlay the end of the title instead of reserving
+                    space, so titles use the full width when not hovered. */}
+                <div className={clsx("row-actions gap-0.5", deleteOpen && "row-actions-open")}>
                     <ActionIcon
                         size="xs"
                         variant="subtle"
@@ -603,19 +629,22 @@ function NotebookItem({
                     >
                         <Edit2 size={12} />
                     </ActionIcon>
-                    <DeleteButton
-                        size="sm"
-                        label="Move to trash"
-                        confirmLabel="Move notebook and its contents to trash"
-                        onOpenChange={setDeleteOpen}
-                        onConfirm={() => onDelete(notebook.id)}
-                    />
+                    <div className="-my-1">
+                        <DeleteButton
+                            size="sm"
+                            label="Move to trash"
+                            confirmLabel="Move notebook and its contents to trash"
+                            onOpenChange={setDeleteOpen}
+                            onConfirm={() => onDelete(notebook.id)}
+                        />
+                    </div>
                 </div>
             </div>
+            )}
 
             {/* Expanded Content: Notes + Sub-Notebooks */}
             {isExpanded && (
-                <div className="animate-fade-in">
+                <div className={clsx(animateExpandRef.current && "animate-fade-in")}>
                     {/* Notes */}
                     {showNotesSpinner ? (
                         <div className="py-2" style={{ paddingLeft: `${24 + depth * 16}px` }}>
@@ -732,13 +761,20 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
             {...attributes}
             {...listeners}
             className={clsx(
-                "group flex items-center gap-2 py-1.5 rounded-md cursor-pointer transition-colors text-sm",
+                "group relative flex items-center gap-2 py-1.5 rounded-md cursor-pointer transition-colors text-sm",
                 isDragging && "opacity-40",
                 selectedNoteId === note.id
                     ? "bg-app-primary/10 text-app-primary font-medium"
                     : "text-app-text/80 hover:bg-app-accent-bg hover:text-app-text"
             )}
-            style={{ paddingLeft: `${8 + depth * 16}px`, paddingRight: '8px' }}
+            style={{
+                paddingLeft: `${8 + depth * 16}px`,
+                paddingRight: '8px',
+                // Tint used by the actions overlay to match the row background
+                ['--row-tint' as string]: selectedNoteId === note.id
+                    ? 'color-mix(in srgb, var(--primary) 10%, transparent)'
+                    : 'var(--accent-bg)',
+            }}
             onClick={() => selectNote(note.id, note.notebook_id)}
         >
             <div className="w-4 flex-shrink-0" /> {/* Spacer to align with chevron */}
@@ -746,18 +782,12 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
                 "flex-shrink-0",
                 selectedNoteId === note.id ? "text-app-primary" : "text-app-muted group-hover:text-app-text"
             )} />
-            <span className={clsx(
-                "flex-1",
-                selectedNoteId === note.id && "truncate"
-            )}>{note.title || 'Untitled'}</span>
+            <span className="flex-1 min-w-0 truncate" title={note.title || 'Untitled'}>{note.title || 'Untitled'}</span>
             <MobileActionsButton
                 label={`Actions for ${note.title || 'Untitled'}`}
                 onOpen={() => openActions({ type: 'note', note })}
             />
-            <div className={clsx(
-                "hidden lg:flex -my-1 transition-opacity",
-                selectedNoteId === note.id || deleteOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
-            )}>
+            <div className={clsx("row-actions", deleteOpen && "row-actions-open")}>
                 <DeleteButton
                     size="sm"
                     label="Move to trash"
@@ -906,7 +936,7 @@ function WastebasketSection() {
                                             {expandedNotebookIds.has(notebook.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                                         </div>
                                         <Book size={14} className="text-app-muted flex-shrink-0" />
-                                        <span className="flex-1 truncate line-through decoration-red-500/50">{notebook.title}</span>
+                                        <span className="flex-1 min-w-0 truncate line-through decoration-red-500/50">{notebook.title}</span>
                                         {notesByNotebook[notebook.id]?.length ? (
                                             <span className="text-[10px] text-app-muted">{notesByNotebook[notebook.id]?.length}</span>
                                         ) : null}
@@ -945,7 +975,7 @@ function WastebasketSection() {
                                                 >
                                                     <div className="w-4 flex-shrink-0" />
                                                     <FileText size={12} className="text-app-muted flex-shrink-0" />
-                                                    <span className="flex-1 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
+                                                    <span className="flex-1 min-w-0 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -971,7 +1001,7 @@ function WastebasketSection() {
                                         >
                                             <div className="w-4 flex-shrink-0" />
                                             <FileText size={14} className="text-app-muted flex-shrink-0" />
-                                            <span className="flex-1 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
+                                            <span className="flex-1 min-w-0 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
                                             <div className="flex items-center gap-1">
                                                 <button
                                                     title="Restore Note"

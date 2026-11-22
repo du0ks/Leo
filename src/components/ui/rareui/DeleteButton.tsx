@@ -162,8 +162,10 @@ export function DeleteButton({
         const onDown = (e: PointerEvent) => {
             if (root.current && !root.current.contains(e.target as Node)) resolve('kept', false);
         };
-        document.addEventListener('pointerdown', onDown);
-        return () => document.removeEventListener('pointerdown', onDown);
+        // Capture phase: rows and other delete buttons stop propagation, which
+        // previously left several confirmations open at once.
+        document.addEventListener('pointerdown', onDown, true);
+        return () => document.removeEventListener('pointerdown', onDown, true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
