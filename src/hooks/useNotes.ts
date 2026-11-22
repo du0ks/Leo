@@ -1,223 +1,288 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import * as React from 'react';
+import { useEffect, useState } from 'react';
 import {
     collection,
     query,
     getDocs,
     getDoc,
+    getDocFromCache,
+    getDocsFromCache,
     doc,
     addDoc,
     updateDoc,
     deleteDoc,
     writeBatch,
     serverTimestamp,
-    Timestamp,
     onSnapshot,
-    where
+    where,
+    type DocumentData,
+    type DocumentSnapshot,
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
+import { firstSnapshot, toIso } from '../lib/firestoreUtils';
+import { sanitizeTitle } from './useNotebooks';
+import { useUIStore } from '../stores/uiStore';
 import type { Note, NewNote } from '../lib/types';
 
-// Security: Input validation constants
-const MAX_TITLE_LENGTH = 200;
-const MAX_CONTENT_SIZE_BYTES = 500_000; // 500KB
+// Firestore documents are limited to 1 MiB; keep a safe margin (mirrored in UI messages).
+export const MAX_CONTENT_SIZE_BYTES = 800_000;
 
-const sanitizeTitle = (title: string): string => {
-    const stripped = title.replace(/<[^>]*>/g, '').trim();
-    return stripped.slice(0, MAX_TITLE_LENGTH);
-};
+const encoder = new TextEncoder();
 
-const validateContent = (content: unknown): unknown => {
+/**
+ * Validate note content and strip `undefined` values (Firestore rejects them).
+ * Throws a user-readable error when the content is invalid or too large.
+ */
+const validateContent = (content: unknown): unknown[] => {
     if (content === undefined || content === null) return [];
     if (!Array.isArray(content)) {
         throw new Error('Invalid note content format');
     }
 
-    // Stringify to calculate size AND strip undefined values automatically
     const serialized = JSON.stringify(content);
-    if (serialized.length > MAX_CONTENT_SIZE_BYTES) {
-        throw new Error(`Note content exceeds maximum size of ${MAX_CONTENT_SIZE_BYTES / 1000}KB`);
+    const bytes = encoder.encode(serialized).length;
+    if (bytes > MAX_CONTENT_SIZE_BYTES) {
+        throw new Error(
+            `This note is too large to save (${Math.round(bytes / 1000)} KB, limit ${MAX_CONTENT_SIZE_BYTES / 1000} KB). Try splitting it into several notes.`
+        );
     }
-
-    // Recursively remove `undefined` keys by parsing the serialized string. 
-    // This solves the Firestore "Unsupported field value: undefined" error when deeply nested undefined properties exist.
     return JSON.parse(serialized);
 };
 
-// Helper to get notes collection for a notebook
-const getNotesRef = (notebookId: string) => {
+const requireUid = () => {
     const userId = auth.currentUser?.uid;
     if (!userId) throw new Error('Not authenticated');
-    return collection(db, 'users', userId, 'notebooks', notebookId, 'notes');
+    return userId;
 };
 
-// Fetch notes for a specific notebook with real-time sync
-export function useNotes(notebookId: string | null) {
+const getNotesRef = (notebookId: string) =>
+    collection(db, 'users', requireUid(), 'notebooks', notebookId, 'notes');
+
+const parseNote = (
+    docSnap: DocumentSnapshot<DocumentData>,
+    notebookId: string,
+    { includeContent }: { includeContent: boolean }
+): Note => {
+    const data = docSnap.data({ serverTimestamps: 'estimate' }) ?? {};
+    return {
+        id: docSnap.id,
+        notebook_id: notebookId,
+        title: data.title ?? '',
+        // Lists (sidebar, trash) never render content; dropping it keeps the
+        // in-memory cache small for notebooks with large notes.
+        content: includeContent ? data.content : undefined,
+        created_at: toIso(data.createdAt)!,
+        updated_at: toIso(data.updatedAt)!,
+        deleted_at: toIso(data.deletedAt, null),
+        has_pending_writes: docSnap.metadata.hasPendingWrites,
+    };
+};
+
+const sortByTitle = (notes: Note[]) =>
+    notes.sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
+
+const parseNoteList = (docs: DocumentSnapshot<DocumentData>[], notebookId: string) =>
+    sortByTitle(
+        docs
+            .map((d) => parseNote(d, notebookId, { includeContent: false }))
+            .filter((n) => n.deleted_at === null)
+    );
+
+/**
+ * Warm the note lists of all notebooks in the background, so expanding a
+ * notebook for the first time shows its notes instantly — without keeping a
+ * live listener open per notebook.
+ *
+ * Reads the device's Firestore cache first (instant, no network). Only
+ * notebooks with nothing cached are fetched once from the server.
+ */
+export function usePrefetchNoteLists(notebookIds: string[] | undefined) {
     const queryClient = useQueryClient();
     const userId = auth.currentUser?.uid;
+    const idsKey = notebookIds?.join(',') ?? '';
 
-    // Use useQuery for the data structure and initial state
-    const { data, ...queryResult } = useQuery({
-        queryKey: ['notes', notebookId],
-        queryFn: async (): Promise<Note[]> => {
-            // Initial fetch is still useful for loading state, but onSnapshot handles updates
-            const q = query(getNotesRef(notebookId!));
-            const snapshot = await getDocs(q);
-            return snapshot.docs
-                .map(docSnap => {
-                    const data = docSnap.data({ serverTimestamps: 'estimate' });
-                    return {
-                        id: docSnap.id,
-                        notebook_id: notebookId!,
-                        title: data.title,
-                        content: data.content,
-                        created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-                        updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-                        deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
-                    };
-                })
-                .filter(n => n.deleted_at === null)
-                .sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })) as Note[];
-        },
-        enabled: !!notebookId && !!userId,
-        staleTime: Infinity, // Rely on snapshot updates
-    });
+    useEffect(() => {
+        if (!userId || !idsKey) return;
+        let cancelled = false;
+        const missing = idsKey
+            .split(',')
+            .filter((id) => queryClient.getQueryData(['notes', id]) === undefined);
 
-    // Real-time subscription
-    React.useEffect(() => {
-        if (!notebookId || !userId) return;
-
-        const q = query(getNotesRef(notebookId));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const notes = snapshot.docs
-                .map(docSnap => {
-                    const data = docSnap.data({ serverTimestamps: 'estimate' });
-                    return {
-                        id: docSnap.id,
-                        notebook_id: notebookId,
-                        title: data.title,
-                        content: data.content,
-                        created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-                        updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-                        deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
-                    };
-                })
-                .filter(n => n.deleted_at === null)
-                .sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })) as Note[];
-
-            queryClient.setQueryData(['notes', notebookId], notes);
-        }, (error) => {
-            console.error("Error in notes snapshot listener:", error);
-        });
-
-        return () => unsubscribe();
-    }, [notebookId, userId, queryClient]);
-
-    return { data, ...queryResult };
-}
-
-// Fetch trashed notes across all notebooks
-export function useTrashedNotes() {
-    return useQuery({
-        queryKey: ['notes', 'trashed'],
-        queryFn: async (): Promise<Note[]> => {
-            const userId = auth.currentUser?.uid;
-            if (!userId) return [];
-
-            // 1. Get all notebooks
-            const notebooksRef = collection(db, 'users', userId, 'notebooks');
-            const notebooksSnapshot = await getDocs(notebooksRef);
-
-            // 2. Fetch ONLY deleted notes from each notebook using a query to save reads
-            const allTrashedNotes: Note[] = [];
-            for (const nbDoc of notebooksSnapshot.docs) {
-                const notesRef = collection(db, 'users', userId, 'notebooks', nbDoc.id, 'notes');
-                const trashedQuery = query(notesRef, where('deletedAt', '!=', null));
-                const snp = await getDocs(trashedQuery);
-
-                snp.docs.forEach(docSnap => {
-                    const data = docSnap.data({ serverTimestamps: 'estimate' });
-                    const deletedAtStr = data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null;
-
-                    if (deletedAtStr) {
-                        allTrashedNotes.push({
-                            id: docSnap.id,
-                            notebook_id: nbDoc.id,
-                            title: data.title,
-                            content: data.content,
-                            created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-                            updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-                            deleted_at: deletedAtStr,
-                        });
+        (async () => {
+            const needServer: string[] = [];
+            await Promise.all(
+                missing.map(async (id) => {
+                    try {
+                        const snap = await getDocsFromCache(query(getNotesRef(id)));
+                        if (cancelled) return;
+                        if (snap.empty) {
+                            needServer.push(id);
+                        } else if (queryClient.getQueryData(['notes', id]) === undefined) {
+                            queryClient.setQueryData(['notes', id], parseNoteList(snap.docs, id));
+                        }
+                    } catch {
+                        needServer.push(id);
                     }
-                });
-            }
-
-            return allTrashedNotes.sort((a, b) =>
-                new Date(b.deleted_at!).getTime() - new Date(a.deleted_at!).getTime()
+                })
             );
-        },
-        enabled: !!auth.currentUser,
-    });
+            await Promise.all(
+                needServer.map(async (id) => {
+                    try {
+                        const snap = await getDocs(query(getNotesRef(id)));
+                        if (!cancelled && queryClient.getQueryData(['notes', id]) === undefined) {
+                            queryClient.setQueryData(['notes', id], parseNoteList(snap.docs, id));
+                        }
+                    } catch (err) {
+                        console.warn('Prefetching notes failed for notebook', id, err);
+                    }
+                })
+            );
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [idsKey, userId, queryClient]);
 }
 
-// Fetch a single note
-// Fetch a single note
-export function useNote(noteId: string | null, notebookId?: string | null) {
+/** True only if `active` stays true for `delayMs` (avoids spinner flicker). */
+export function useDelayedFlag(active: boolean, delayMs = 250) {
+    const [shown, setShown] = useState(false);
+    useEffect(() => {
+        if (!active) {
+            setShown(false);
+            return;
+        }
+        const t = setTimeout(() => setShown(true), delayMs);
+        return () => clearTimeout(t);
+    }, [active, delayMs]);
+    return shown;
+}
+
+/**
+ * Active notes of a notebook, kept live by a snapshot listener.
+ * Pass `enabled = false` (e.g. for collapsed notebooks) to avoid opening a
+ * listener and downloading every note in every notebook on startup.
+ */
+export function useNotes(notebookId: string | null, enabled = true) {
     const queryClient = useQueryClient();
     const userId = auth.currentUser?.uid;
+    const active = enabled && !!notebookId && !!userId;
 
-    const { data, ...queryResult } = useQuery({
-        queryKey: ['note', noteId],
-        queryFn: async (): Promise<Note | null> => {
-            if (!noteId || !notebookId) return null;
-            const docRef = doc(getNotesRef(notebookId), noteId);
-            const docSnap = await getDoc(docRef);
+    const parseList = (docs: DocumentSnapshot<DocumentData>[]) => parseNoteList(docs, notebookId!);
 
-            if (!docSnap.exists()) return null;
-
-            const data = docSnap.data({ serverTimestamps: 'estimate' });
-            return {
-                id: docSnap.id,
-                notebook_id: notebookId,
-                title: data.title,
-                content: data.content,
-                created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-                updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-                deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
-            } as Note;
-        },
-        enabled: !!noteId && !!notebookId && !!userId,
+    const result = useQuery({
+        queryKey: ['notes', notebookId],
+        queryFn: () =>
+            firstSnapshot<Note[]>((next, error) =>
+                onSnapshot(query(getNotesRef(notebookId!)), (s) => next(parseList(s.docs)), error)
+            ),
+        enabled: active,
         staleTime: Infinity,
     });
 
-    React.useEffect(() => {
-        if (!noteId || !notebookId || !userId) return;
+    useEffect(() => {
+        if (!active) return;
+        return onSnapshot(
+            query(getNotesRef(notebookId!)),
+            (snapshot) => queryClient.setQueryData(['notes', notebookId], parseList(snapshot.docs)),
+            (error) => console.error('Error in notes snapshot listener:', error)
+        );
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [active, notebookId, queryClient]);
 
-        const docRef = doc(getNotesRef(notebookId), noteId);
-        const unsubscribe = onSnapshot(docRef, (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data({ serverTimestamps: 'estimate' });
-                const updatedNote = {
-                    id: docSnap.id,
-                    notebook_id: notebookId,
-                    title: data.title,
-                    content: data.content,
-                    created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-                    updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-                    deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
-                } as Note;
+    return result;
+}
 
-                queryClient.setQueryData(['note', noteId], updatedNote);
-            }
-        }, (error) => {
-            console.error("Error in note snapshot listener:", error);
-        });
+// Fetch trashed notes across all notebooks (queries run in parallel)
+export function useTrashedNotes() {
+    const userId = auth.currentUser?.uid;
+    return useQuery({
+        queryKey: ['notes', 'trashed'],
+        queryFn: async (): Promise<Note[]> => {
+            const uid = requireUid();
+            const notebooksSnapshot = await getDocs(collection(db, 'users', uid, 'notebooks'));
 
-        return () => unsubscribe();
-    }, [noteId, notebookId, userId, queryClient]);
+            const perNotebook = await Promise.all(
+                notebooksSnapshot.docs.map(async (nbDoc) => {
+                    const snap = await getDocs(query(getNotesRef(nbDoc.id), where('deletedAt', '!=', null)));
+                    return snap.docs.map((d) => parseNote(d, nbDoc.id, { includeContent: false }));
+                })
+            );
 
-    return { data, ...queryResult };
+            return perNotebook
+                .flat()
+                .filter((n) => n.deleted_at !== null)
+                .sort((a, b) => new Date(b.deleted_at!).getTime() - new Date(a.deleted_at!).getTime());
+        },
+        enabled: !!userId,
+    });
+}
+
+// Fetch a single note (with content), kept live by a snapshot listener
+export function useNote(noteId: string | null, notebookId?: string | null) {
+    const queryClient = useQueryClient();
+    const userId = auth.currentUser?.uid;
+    const active = !!noteId && !!notebookId && !!userId;
+
+    const result = useQuery({
+        // Keyed by note ID only so that moving a note between notebooks
+        // (same ID, new path) does not flash a loading state.
+        queryKey: ['note', noteId],
+        queryFn: () =>
+            firstSnapshot<Note | null>((next, error) =>
+                onSnapshot(
+                    doc(getNotesRef(notebookId!), noteId!),
+                    (s) => next(s.exists() ? parseNote(s, notebookId!, { includeContent: true }) : null),
+                    error
+                )
+            ),
+        enabled: active,
+        staleTime: Infinity,
+    });
+
+    useEffect(() => {
+        if (!active) return;
+        return onSnapshot(
+            doc(getNotesRef(notebookId!), noteId!),
+            (docSnap) => {
+                if (docSnap.exists()) {
+                    queryClient.setQueryData(['note', noteId], parseNote(docSnap, notebookId!, { includeContent: true }));
+                    return;
+                }
+                // The doc vanished. Ignore it if the note was just moved to
+                // another notebook (selection already points to the new path).
+                if (useUIStore.getState().selectedNotebookId === notebookId) {
+                    queryClient.setQueryData(['note', noteId], null);
+                }
+            },
+            (error) => console.error('Error in note snapshot listener:', error)
+        );
+    }, [active, noteId, notebookId, queryClient]);
+
+    return result;
+}
+
+/**
+ * Write note fields directly to Firestore.
+ *
+ * The returned promise resolves when the server acknowledges the write, but the
+ * change is applied to the local (persistent) cache immediately, so callers
+ * should NOT block the UI on it — offline it only resolves after reconnecting.
+ */
+export function saveNoteFields(
+    notebookId: string,
+    noteId: string,
+    fields: { title?: string; content?: unknown }
+): Promise<void> {
+    try {
+        const updates: DocumentData = { updatedAt: serverTimestamp() };
+        if (fields.title !== undefined) updates.title = sanitizeTitle(fields.title);
+        if (fields.content !== undefined) updates.content = validateContent(fields.content);
+        return updateDoc(doc(getNotesRef(notebookId), noteId), updates);
+    } catch (err) {
+        return Promise.reject(err);
+    }
 }
 
 // Mutations
@@ -234,102 +299,16 @@ export function useCreateNote() {
                 deletedAt: null,
             });
 
+            const now = new Date().toISOString();
             return {
                 id: docRef.id,
                 notebook_id: note.notebook_id,
                 title: safeTitle,
                 content: safeContent,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
+                created_at: now,
+                updated_at: now,
                 deleted_at: null,
             };
-        },
-        onSuccess: () => {
-            // Real-time snapshot handles note updates
-        },
-    });
-}
-
-export function useUpdateNote() {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: async ({
-            id,
-            notebookId,
-            title,
-            content
-        }: {
-            id: string;
-            notebookId: string;
-            title?: string;
-            content?: unknown
-        }) => {
-            const docRef = doc(getNotesRef(notebookId), id);
-
-            // Helper to find undefined paths in an object for debugging data loss issues
-            const findUndefinedPaths = (obj: any, path: string = ''): string[] => {
-                let paths: string[] = [];
-                if (obj === undefined) return [path || 'root'];
-                if (obj === null || typeof obj !== 'object') return paths;
-
-                for (const key in obj) {
-                    if (Object.prototype.hasOwnProperty.call(obj, key)) {
-                        const currentPath = path ? `${path}.${key}` : key;
-                        if (obj[key] === undefined) {
-                            paths.push(currentPath);
-                        } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-                            paths.push(...findUndefinedPaths(obj[key], currentPath));
-                        }
-                    }
-                }
-                return paths;
-            };
-
-            const updates: { updatedAt: ReturnType<typeof serverTimestamp>; title?: string; content?: unknown } = {
-                updatedAt: serverTimestamp(),
-            };
-
-            if (title !== undefined) updates.title = sanitizeTitle(title);
-            if (content !== undefined) {
-                // Debug logging to find the source of 'undefined' properties before they are stripped
-                const undefinedPaths = findUndefinedPaths(content, 'content');
-                if (undefinedPaths.length > 0) {
-                    console.warn(`[useUpdateNote] Found undefined values in payload at paths:`, undefinedPaths);
-                }
-
-                updates.content = validateContent(content);
-            }
-
-            await updateDoc(docRef, updates);
-            return { id, notebookId };
-        },
-        onMutate: async (updatedNote) => {
-            await queryClient.cancelQueries({ queryKey: ['note', updatedNote.id] });
-            const previousNote = queryClient.getQueryData(['note', updatedNote.id]);
-
-            if (previousNote) {
-                queryClient.setQueryData(['note', updatedNote.id], (old: any) => ({
-                    ...old,
-                    ...updatedNote,
-                    updated_at: new Date().toISOString(),
-                }));
-            }
-
-            return { previousNote };
-        },
-        // Note: We intentionally DON'T invalidate queries here.
-        // The real-time snapshot listener will sync data when Firestore propagates the write.
-        // Calling invalidateQueries immediately can cause a race condition where we refetch
-        // stale data before the write has propagated, causing data loss during rapid edits.
-        onSuccess: () => {
-            // No-op: rely on snapshot listeners and optimistic updates
-        },
-        onError: (err, newNote, context) => {
-            console.error('[useUpdateNote] Mutation failed! Rolling back optimistic update.', err);
-            if (context?.previousNote) {
-                queryClient.setQueryData(['note', newNote.id], context.previousNote);
-            }
         },
     });
 }
@@ -339,14 +318,12 @@ export function useSoftDeleteNote() {
 
     return useMutation({
         mutationFn: async ({ id, notebookId }: { id: string; notebookId: string }) => {
-            const docRef = doc(getNotesRef(notebookId), id);
-            await updateDoc(docRef, {
+            await updateDoc(doc(getNotesRef(notebookId), id), {
                 deletedAt: serverTimestamp(),
             });
             return { id, notebookId };
         },
         onSuccess: () => {
-            // Active notes handle updates via onSnapshot, only manual fetch needs invalidation
             queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
@@ -357,8 +334,7 @@ export function useRestoreNote() {
 
     return useMutation({
         mutationFn: async ({ id, notebookId }: { id: string; notebookId: string }) => {
-            const docRef = doc(getNotesRef(notebookId), id);
-            await updateDoc(docRef, {
+            await updateDoc(doc(getNotesRef(notebookId), id), {
                 deletedAt: null,
             });
             return { id, notebookId };
@@ -374,8 +350,7 @@ export function usePermanentlyDeleteNote() {
 
     return useMutation({
         mutationFn: async ({ id, notebookId }: { id: string; notebookId: string }) => {
-            const docRef = doc(getNotesRef(notebookId), id);
-            await deleteDoc(docRef);
+            await deleteDoc(doc(getNotesRef(notebookId), id));
             return { id, notebookId };
         },
         onSuccess: () => {
@@ -384,53 +359,46 @@ export function usePermanentlyDeleteNote() {
     });
 }
 
-// Move note to a different notebook
+/**
+ * Move note to a different notebook.
+ *
+ * The note keeps its ID, so an open editor stays attached to it. Callers must
+ * flush pending editor saves first (see `flushPendingSaves`) so the copy
+ * contains the latest content.
+ */
 export function useMoveNote() {
     return useMutation({
         mutationFn: async ({
             id,
             fromNotebookId,
-            toNotebookId
+            toNotebookId,
         }: {
             id: string;
             fromNotebookId: string;
             toNotebookId: string;
         }) => {
-            // Get the original note data
-            const oldDocRef = doc(getNotesRef(fromNotebookId), id);
-            const oldDocSnap = await getDoc(oldDocRef);
+            if (fromNotebookId === toNotebookId) return;
 
-            if (!oldDocSnap.exists()) {
-                throw new Error('Note not found');
+            const oldDocRef = doc(getNotesRef(fromNotebookId), id);
+            // Prefer the local cache: it already contains any pending local
+            // edits and does not need the network.
+            let snap = await getDocFromCache(oldDocRef).catch(() => null);
+            if (!snap?.exists()) snap = await getDoc(oldDocRef);
+            if (!snap.exists()) throw new Error('Note not found');
+
+            const ui = useUIStore.getState();
+            if (ui.selectedNoteId === id) {
+                // Re-point the open editor before the old document disappears.
+                ui.selectNote(id, toNotebookId, ui.isTrashView);
             }
 
-            const noteData = oldDocSnap.data();
-
-            // LOW-1 fix: Use batch write for atomicity (prevents data loss if partial failure)
             const batch = writeBatch(db);
-
-            // Create note in new notebook
-            const newDocRef = doc(getNotesRef(toNotebookId));
-            batch.set(newDocRef, {
-                ...noteData,
+            batch.set(doc(getNotesRef(toNotebookId), id), {
+                ...snap.data(),
                 updatedAt: serverTimestamp(),
             });
-
-            // Delete from old notebook
             batch.delete(oldDocRef);
-
-            // Commit both operations atomically
             await batch.commit();
-
-            return {
-                oldId: id,
-                newId: newDocRef.id,
-                fromNotebookId,
-                toNotebookId
-            };
-        },
-        onSuccess: () => {
-            // Real-time snapshot handles re-fetching for active notebooks
         },
     });
 }

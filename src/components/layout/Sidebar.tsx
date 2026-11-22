@@ -16,6 +16,8 @@ import {
 } from '../../hooks/useNotebooks';
 import {
     useNotes,
+    usePrefetchNoteLists,
+    useDelayedFlag,
     useTrashedNotes,
     useCreateNote,
     useSoftDeleteNote,
@@ -28,6 +30,10 @@ import { useAuth } from '../../hooks/useAuth';
 import clsx from 'clsx';
 import { ActionIcon } from '@mantine/core';
 import type { Notebook, Note } from '../../lib/types';
+import { flushPendingSaves } from '../../lib/pendingSaves';
+
+const errorMessage = (err: unknown, fallback: string) =>
+    err instanceof Error && err.message ? err.message : fallback;
 
 // Drag and Drop imports
 import {
@@ -56,6 +62,8 @@ interface DragItem {
 export function Sidebar() {
     const { user } = useAuth();
     const { data: notebooks, isLoading: notebooksLoading } = useNotebooks();
+    const notebookIds = useMemo(() => notebooks?.map((nb) => nb.id), [notebooks]);
+    usePrefetchNoteLists(notebookIds);
 
     // Local state for creating/editing notebooks
     const [isCreatingNotebook, setIsCreatingNotebook] = useState(false);
@@ -130,14 +138,25 @@ export function Sidebar() {
             setEditingNotebookId(null);
             return;
         }
-        await updateNotebook.mutateAsync({ id, title: editNotebookTitle.trim() });
-        setEditingNotebookId(null);
+        try {
+            await updateNotebook.mutateAsync({ id, title: editNotebookTitle.trim() });
+            setEditingNotebookId(null);
+        } catch (err) {
+            console.error('Failed to rename notebook:', err);
+            window.alert('Could not rename notebook: ' + errorMessage(err, 'Please try again.'));
+        }
     };
 
     const handleDeleteNotebook = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if (confirm('Move this notebook to trash? All its notes and sub-notebooks will also be trashed.')) {
-            await softDeleteNotebook.mutateAsync(id);
+            flushPendingSaves();
+            try {
+                await softDeleteNotebook.mutateAsync(id);
+            } catch (err) {
+                console.error('Failed to trash notebook:', err);
+                window.alert('Could not move notebook to trash: ' + errorMessage(err, 'Please try again.'));
+            }
         }
     };
 
@@ -157,6 +176,15 @@ export function Sidebar() {
         const dragData = active.data.current as DragItem;
         const dropId = over.id as string;
 
+        try {
+            await performDrop(dragData, dropId);
+        } catch (err) {
+            console.error('Move failed:', err);
+            window.alert('Could not move item: ' + errorMessage(err, 'Please try again.'));
+        }
+    };
+
+    const performDrop = async (dragData: DragItem, dropId: string) => {
         // Handle dropping onto the Library/Root header
         if (dropId === 'root') {
             if (dragData.type === 'notebook' && dragData.parentNotebookId !== null) {
@@ -176,6 +204,8 @@ export function Sidebar() {
         if (dragData.type === 'note') {
             // Move note to different notebook
             if (dragData.notebookId !== droppedOnNotebook.id) {
+                // Write buffered editor changes first so the moved copy is current
+                flushPendingSaves();
                 await moveNote.mutateAsync({
                     id: dragData.id,
                     fromNotebookId: dragData.notebookId!,
@@ -383,7 +413,10 @@ function NotebookItem({
     const isExpanded = useUIStore((state) => state.expandedNotebooks.has(notebook.id));
     const toggleNotebookExpand = useUIStore((state) => state.toggleNotebookExpand);
 
-    const { data: notes, isLoading: notesLoading } = useNotes(notebook.id);
+    // Only subscribe to a notebook's notes while it is expanded
+    const { data: notes, isLoading: notesLoading } = useNotes(notebook.id, isExpanded);
+    // Lists are usually prefetched; only show a spinner if loading is noticeable
+    const showNotesSpinner = useDelayedFlag(notesLoading);
     const createNote = useCreateNote();
 
     const childNotebooks = childrenMap.get(notebook.id) || [];
@@ -534,7 +567,7 @@ function NotebookItem({
             {isExpanded && (
                 <div className="animate-fade-in">
                     {/* Notes */}
-                    {notesLoading ? (
+                    {showNotesSpinner ? (
                         <div className="py-2" style={{ paddingLeft: `${24 + depth * 16}px` }}>
                             <Loader2 size={14} className="animate-spin text-app-muted" />
                         </div>
@@ -631,8 +664,16 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
     const handleDelete = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (confirm('Move note to trash?')) {
-            await softDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
-            if (selectedNoteId === note.id) selectNote(null, null);
+            if (selectedNoteId === note.id) {
+                flushPendingSaves();
+                selectNote(null, null);
+            }
+            try {
+                await softDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+            } catch (err) {
+                console.error('Failed to trash note:', err);
+                window.alert('Could not move note to trash: ' + errorMessage(err, 'Please try again.'));
+            }
         }
     };
 
@@ -719,11 +760,55 @@ function WastebasketSection() {
     const handleClearWastebasket = async () => {
         if (!confirm("Permanently delete ALL items in the wastebasket? This cannot be undone.")) return;
 
-        for (const nb of trashedNotebooks || []) {
-            await permDeleteNotebook.mutateAsync(nb.id);
+        if (useUIStore.getState().isTrashView) selectNote(null, null);
+        const results = await Promise.allSettled([
+            ...(trashedNotebooks || []).map((nb) => permDeleteNotebook.mutateAsync(nb.id)),
+            ...orphanTrashedNotes.map((note) =>
+                permDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id })
+            ),
+        ]);
+        const failed = results.filter((r) => r.status === 'rejected').length;
+        if (failed > 0) {
+            window.alert(`${failed} item(s) could not be deleted. Please try again.`);
         }
-        for (const note of orphanTrashedNotes) {
+    };
+
+    const handleRestoreNote = async (note: Note) => {
+        try {
+            await restoreNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+            if (selectedNoteId === note.id) selectNote(note.id, note.notebook_id, false);
+        } catch (err) {
+            window.alert('Could not restore note: ' + errorMessage(err, 'Please try again.'));
+        }
+    };
+
+    const handlePermDeleteNote = async (note: Note) => {
+        if (!confirm("Delete note permanently? This cannot be undone.")) return;
+        if (selectedNoteId === note.id) selectNote(null, null);
+        try {
             await permDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+        } catch (err) {
+            window.alert('Could not delete note: ' + errorMessage(err, 'Please try again.'));
+        }
+    };
+
+    const handleRestoreNotebook = async (notebookId: string) => {
+        try {
+            await restoreNotebook.mutateAsync(notebookId);
+            const { isTrashView, selectedNoteId: selId, selectedNotebookId } = useUIStore.getState();
+            if (isTrashView && selId) selectNote(selId, selectedNotebookId, false);
+        } catch (err) {
+            window.alert('Could not restore notebook: ' + errorMessage(err, 'Please try again.'));
+        }
+    };
+
+    const handlePermDeleteNotebook = async (notebookId: string) => {
+        if (!confirm("Delete notebook and ALL its notes permanently? This cannot be undone.")) return;
+        if (useUIStore.getState().selectedNotebookId === notebookId) selectNote(null, null);
+        try {
+            await permDeleteNotebook.mutateAsync(notebookId);
+        } catch (err) {
+            window.alert('Could not delete notebook: ' + errorMessage(err, 'Please try again.'));
         }
     };
 
@@ -780,7 +865,7 @@ function WastebasketSection() {
                                                 title="Restore Notebook"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    restoreNotebook.mutateAsync(notebook.id);
+                                                    handleRestoreNotebook(notebook.id);
                                                 }}
                                                 className="p-1 text-green-500 hover:bg-green-500/10 rounded"
                                             >
@@ -790,9 +875,7 @@ function WastebasketSection() {
                                                 title="Delete Permanently"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    if (confirm("Delete notebook and ALL its notes permanently?")) {
-                                                        permDeleteNotebook.mutateAsync(notebook.id);
-                                                    }
+                                                    handlePermDeleteNotebook(notebook.id);
                                                 }}
                                                 className="p-1 text-red-500 hover:bg-red-500/10 rounded"
                                             >
@@ -848,7 +931,7 @@ function WastebasketSection() {
                                                     title="Restore Note"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        restoreNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+                                                        handleRestoreNote(note);
                                                     }}
                                                     className="p-1 text-green-500 hover:bg-green-500/10 rounded"
                                                 >
@@ -858,9 +941,7 @@ function WastebasketSection() {
                                                     title="Delete Forever"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        if (confirm("Delete note permanently?")) {
-                                                            permDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
-                                                        }
+                                                        handlePermDeleteNote(note);
                                                     }}
                                                     className="p-1 text-red-500 hover:bg-red-500/10 rounded"
                                                 >

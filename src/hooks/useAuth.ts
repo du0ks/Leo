@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useSyncExternalStore } from 'react';
 import {
     onAuthStateChanged,
     signInWithEmailAndPassword,
@@ -9,8 +9,32 @@ import {
     User,
     AuthError
 } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, waitForPendingWrites, terminate, clearIndexedDbPersistence } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { flushPendingSaves } from '../lib/pendingSaves';
+import { useUIStore } from '../stores/uiStore';
+
+// --- Shared auth state ------------------------------------------------------
+// A single onAuthStateChanged listener for the whole app, instead of one per
+// component that calls useAuth().
+type AuthSnapshot = { user: User | null; loading: boolean };
+let authSnapshot: AuthSnapshot = { user: auth.currentUser, loading: true };
+const authSubscribers = new Set<() => void>();
+
+onAuthStateChanged(auth, (firebaseUser) => {
+    authSnapshot = { user: firebaseUser, loading: false };
+    authSubscribers.forEach((fn) => fn());
+});
+
+const subscribeAuth = (fn: () => void) => {
+    authSubscribers.add(fn);
+    return () => {
+        authSubscribers.delete(fn);
+    };
+};
+const getAuthSnapshot = () => authSnapshot;
+
+const SIGN_OUT_SYNC_TIMEOUT_MS = 4000;
 
 // Convert Firebase error codes to user-friendly messages
 function getAuthErrorMessage(error: AuthError): string {
@@ -59,17 +83,7 @@ function validatePasswordStrength(password: string): string | null {
 }
 
 export function useAuth() {
-    const [user, setUser] = useState<User | null>(null);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (firebaseUser: User | null) => {
-            setUser(firebaseUser);
-            setLoading(false);
-        });
-
-        return () => unsubscribe();
-    }, []);
+    const { user, loading } = useSyncExternalStore(subscribeAuth, getAuthSnapshot);
 
     const signIn = async (email: string, password: string) => {
         try {
@@ -121,8 +135,46 @@ export function useAuth() {
         }
     };
 
-    const signOut = async () => {
+    /**
+     * Sign out safely:
+     * 1. write any buffered editor changes,
+     * 2. wait (briefly) for them to reach the server — warn if they can't,
+     * 3. wipe this user's data from the device (UI state + Firestore offline
+     *    cache) so the next person using this browser can't see it.
+     * Returns false if the user cancelled.
+     */
+    const signOut = async (): Promise<boolean> => {
+        flushPendingSaves();
+
+        const synced = await Promise.race([
+            waitForPendingWrites(db).then(() => true, () => false),
+            new Promise<boolean>((resolve) => setTimeout(() => resolve(false), SIGN_OUT_SYNC_TIMEOUT_MS)),
+        ]);
+        if (
+            !synced &&
+            !confirm(
+                'Some changes have not been synced to the cloud yet (are you offline?).\n\n' +
+                'If you sign out now, they will be lost. Sign out anyway?'
+            )
+        ) {
+            return false;
+        }
+
+        useUIStore.getState().resetSession();
         await firebaseSignOut(auth);
+
+        try {
+            await terminate(db);
+            await clearIndexedDbPersistence(db);
+        } catch (err) {
+            // Fails if another tab still has the database open; that tab's
+            // listeners lose access anyway since the user is signed out.
+            console.warn('Could not clear offline cache:', err);
+        }
+
+        // Firestore can't be used after terminate(); start from a clean slate.
+        window.location.reload();
+        return true;
     };
 
     const resetPassword = async (email: string) => {

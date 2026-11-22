@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { useUIStore, ThemeColor } from '../stores/uiStore';
 import { useEffect } from 'react';
@@ -27,7 +27,7 @@ export function useUserSettings() {
                 const data = snapshot.data();
                 return {
                     darkMode: data.darkMode ?? true,
-                    themeColor: data.themeColor ?? 'blue',
+                    themeColor: data.themeColor ?? 'yellow',
                 };
             }
             return null;
@@ -51,10 +51,8 @@ export function useUserSettings() {
         mutationFn: async (newSettings: Partial<UserSettings>) => {
             if (!userId) return;
             const docRef = doc(db, 'users', userId);
-            await updateDoc(docRef, {
-                ...newSettings,
-                updatedAt: new Date(),
-            });
+            // merge: also works if the profile document was never created
+            await setDoc(docRef, { ...newSettings, updatedAt: new Date() }, { merge: true });
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['settings', userId] });

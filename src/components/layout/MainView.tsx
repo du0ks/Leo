@@ -1,212 +1,212 @@
-import { useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 
-import { useNote, useUpdateNote, useRestoreNote, usePermanentlyDeleteNote } from '../../hooks/useNotes';
+import { useNote, useRestoreNote, usePermanentlyDeleteNote, saveNoteFields } from '../../hooks/useNotes';
 import { useUIStore } from '../../stores/uiStore';
-import { NoteEditor } from '../editor/NoteEditor';
 import type { Block } from '@blocknote/core';
 import { useDebouncedCallback } from '../../hooks/useDebouncedCallback';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
+import { registerFlusher, flushPendingSaves } from '../../lib/pendingSaves';
+import { stableStringify } from '../../lib/firestoreUtils';
 import clsx from 'clsx';
-import {
-    Loader2,
-    RotateCcw,
-    Trash2,
-    AlertCircle
-} from 'lucide-react';
+import { Loader2, RotateCcw, Trash2, AlertCircle, CloudOff } from 'lucide-react';
+
+// The editor (BlockNote + ProseMirror) is the heaviest part of the bundle;
+// load it on demand so the login screen and sidebar appear faster.
+const NoteEditor = lazy(() => import('../editor/NoteEditor').then((m) => ({ default: m.NoteEditor })));
+
+const EditorSpinner = () => (
+    <div className="flex items-center justify-center h-32">
+        <Loader2 className="w-6 h-6 animate-spin text-app-muted" />
+    </div>
+);
+
+const CONTENT_SAVE_DELAY_MS = 1000;
+const TITLE_SAVE_DELAY_MS = 600;
+
+interface EditorState {
+    noteId: string;
+    /** Bumped to remount the editor when a newer remote version is applied. */
+    version: number;
+    content: unknown;
+}
 
 export function MainView() {
-    const { selectedNoteId, selectedNotebookId, isTrashView } = useUIStore();
+    const selectedNoteId = useUIStore((s) => s.selectedNoteId);
+    const selectedNotebookId = useUIStore((s) => s.selectedNotebookId);
+    const isTrashView = useUIStore((s) => s.isTrashView);
+    const selectNote = useUIStore((s) => s.selectNote);
+
     const { data: note, isLoading } = useNote(selectedNoteId, selectedNotebookId);
-    const updateNote = useUpdateNote();
     const restoreNote = useRestoreNote();
     const permanentlyDeleteNote = usePermanentlyDeleteNote();
     const isOnline = useOnlineStatus();
 
-    // Local state for both title AND content to buffer edits from server overwrites
     const [title, setTitle] = useState('');
-    // Store content paired with its note ID to prevent content bleeding
-    const [localContentState, setLocalContentState] = useState<{ id: string, data: Block[] } | null>(null);
-    const [isSaving, setIsSaving] = useState(false);
-    // Track if we're in the middle of flushing pending saves - use counter for multiple rapid switches
-    const pendingFlushCountRef = useRef(0);
-    const [isFlushing, setIsFlushing] = useState(false);
+    const [editorState, setEditorState] = useState<EditorState | null>(null);
+    const [inflightWrites, setInflightWrites] = useState(0);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    /** True while edits are waiting for the debounce timer (drives the indicator). */
+    const [hasBufferedEdits, setHasBufferedEdits] = useState(false);
 
-    // Track notes that have local edits - these should NEVER be overwritten by server data
-    // This is the key protection against race conditions with Firestore snapshots
-    const dirtyNotesRef = useRef<Set<string>>(new Set());
-    // Cache content for dirty notes so we can restore when switching back
-    const dirtyContentCacheRef = useRef<Map<string, { content: Block[], title: string }>>(new Map());
+    // Refs so callbacks stay stable (the editor subscribes to them)
+    const selectedNoteIdRef = useRef(selectedNoteId);
+    const selectedNotebookIdRef = useRef(selectedNotebookId);
+    selectedNoteIdRef.current = selectedNoteId;
+    selectedNotebookIdRef.current = selectedNotebookId;
 
-    // Derived local content: only return data if it belongs to the current note
-    const localContent = localContentState?.id === selectedNoteId ? localContentState.data : null;
+    /** Note currently loaded into the editor. */
+    const loadedNoteIdRef = useRef<string | null>(null);
+    /** Order-independent JSON of the content we last loaded or saved. */
+    const lastContentJsonRef = useRef<string | null>(null);
+    const titleRef = useRef(title);
+    titleRef.current = title;
+    const saveErrorRef = useRef(saveError);
+    saveErrorRef.current = saveError;
 
-    const lastInitializedId = useRef<string | null>(null);
-    // Track whether we've synced from server for current note
-    const hasSyncedRef = useRef(false);
+    // --- Writing -----------------------------------------------------------
 
-    // Reset local state immediately when note ID changes (before data loads)
-    // BUT if the new note is dirty, restore from our cache instead
-    useEffect(() => {
-        if (selectedNoteId !== lastInitializedId.current) {
-            const cached = selectedNoteId ? dirtyContentCacheRef.current.get(selectedNoteId) : undefined;
-            if (cached && selectedNoteId) {
-                // Dirty note - restore from cache, do NOT sync from server
-                setLocalContentState({ id: selectedNoteId, data: cached.content });
-                setTitle(cached.title);
-                hasSyncedRef.current = true; // Mark as synced to prevent server overwrite
-            } else {
-                // Clean note - clear state and wait for server sync
-                setLocalContentState(null);
-                setTitle('');
-                hasSyncedRef.current = false;
-            }
-            lastInitializedId.current = selectedNoteId;
-        }
-    }, [selectedNoteId]);
-
-    // Sync local state from server when note data arrives
-    // IMPORTANT: 
-    // 1. Must verify note.id matches selectedNoteId to avoid syncing stale data
-    // 2. Must wait for ALL pending flushes to complete first
-    // 3. NEVER sync if the note has local edits (dirty) - our local state is the source of truth
-    useEffect(() => {
-        const isDirty = selectedNoteId ? dirtyNotesRef.current.has(selectedNoteId) : false;
-        if (note && note.id === selectedNoteId && !hasSyncedRef.current && !isFlushing && !isDirty) {
-            setTitle(note.title);
-            setLocalContentState({ id: note.id, data: note.content as Block[] ?? [] });
-            hasSyncedRef.current = true;
-        }
-    }, [note, selectedNoteId, isFlushing]);
-
-    // Use ref for updateNote to stabilize saveContent callback
-    // This prevents debouncedSaveContent from being recreated when updateNote changes
-    const updateNoteRef = useRef(updateNote);
-    updateNoteRef.current = updateNote;
-
-    // Save function that captures correct note ID at call time
-    // Uses ref to avoid dependency on updateNote, keeping this stable
-    const saveContent = useCallback(
-        async (content: Block[], noteId: string, notebookId: string) => {
-            // Guard against saving to wrong note
-            if (!noteId || !notebookId) return;
-
-            setIsSaving(true);
-            try {
-                await updateNoteRef.current.mutateAsync({ id: noteId, notebookId, content });
-            } finally {
-                setIsSaving(false);
-            }
+    const runWrite = useCallback(
+        (noteId: string, notebookId: string, fields: { title?: string; content?: unknown }) => {
+            setInflightWrites((n) => n + 1);
+            saveNoteFields(notebookId, noteId, fields)
+                .then(() => setSaveError(null))
+                .catch((err: unknown) => {
+                    console.error('[MainView] Failed to save note:', err);
+                    setSaveError(err instanceof Error ? err.message : 'Failed to save changes.');
+                })
+                .finally(() => setInflightWrites((n) => n - 1));
         },
-        [] // No dependencies - uses ref instead
+        []
     );
 
-    const debouncedSaveContent = useDebouncedCallback(saveContent, 1500);
+    const saveContent = useDebouncedCallback((content: Block[], noteId: string, notebookId: string) => {
+        if (noteId === loadedNoteIdRef.current) {
+            lastContentJsonRef.current = stableStringify(content);
+        }
+        if (!saveTitle.hasPending()) setHasBufferedEdits(false);
+        runWrite(noteId, notebookId, { content });
+    }, CONTENT_SAVE_DELAY_MS);
 
-    const debouncedSaveTitle = useDebouncedCallback(
-        async (newTitle: string, noteId: string, notebookId: string) => {
-            if (!noteId || !notebookId) return;
-            setIsSaving(true);
-            try {
-                await updateNoteRef.current.mutateAsync({ id: noteId, notebookId, title: newTitle });
-            } finally {
-                setIsSaving(false);
-            }
-        },
-        1000
+    const saveTitle = useDebouncedCallback((newTitle: string, noteId: string, notebookId: string) => {
+        if (!saveContent.hasPending()) setHasBufferedEdits(false);
+        runWrite(noteId, notebookId, { title: newTitle });
+    }, TITLE_SAVE_DELAY_MS);
+
+    // Let the rest of the app (move, sign-out, unload) flush our buffered edits
+    useEffect(
+        () =>
+            registerFlusher(() => {
+                saveContent.flush();
+                saveTitle.flush();
+            }),
+        [saveContent, saveTitle]
     );
 
-    // Track previous note ID to flush when it changes
-    const prevNoteIdRef = useRef<string | null>(null);
+    // Never lose the last keystrokes when the tab is closed or backgrounded
+    useEffect(() => {
+        const onHide = () => {
+            if (document.visibilityState === 'hidden') flushPendingSaves();
+        };
+        window.addEventListener('pagehide', flushPendingSaves);
+        document.addEventListener('visibilitychange', onHide);
+        return () => {
+            window.removeEventListener('pagehide', flushPendingSaves);
+            document.removeEventListener('visibilitychange', onHide);
+        };
+    }, []);
 
-    // Flush both content and title when note changes
-    // CRITICAL: Use counter to track ALL in-flight flushes, not just the most recent one
-    useLayoutEffect(() => {
-        const prevId = prevNoteIdRef.current;
-        if (prevId !== null && prevId !== selectedNoteId) {
-            // Increment counter and set flushing state
-            pendingFlushCountRef.current += 1;
-            setIsFlushing(true);
+    // Flush the previous note's edits when switching notes (args carry their own IDs)
+    useEffect(() => {
+        return () => {
+            saveContent.flush();
+            saveTitle.flush();
+        };
+    }, [selectedNoteId, saveContent, saveTitle]);
 
-            // Perform async flush
-            (async () => {
-                try {
-                    await Promise.all([
-                        debouncedSaveContent.flush(),
-                        debouncedSaveTitle.flush()
-                    ]);
-                } finally {
-                    // Decrement counter - only clear isFlushing when ALL flushes complete
-                    pendingFlushCountRef.current -= 1;
-                    if (pendingFlushCountRef.current === 0) {
-                        setIsFlushing(false);
-                    }
-                }
-            })();
+    // --- Loading / remote sync ----------------------------------------------
+
+    useEffect(() => {
+        if (!selectedNoteId) {
+            loadedNoteIdRef.current = null;
+            setEditorState(null);
+            return;
         }
-        prevNoteIdRef.current = selectedNoteId;
-    }, [selectedNoteId, debouncedSaveContent, debouncedSaveTitle]);
+        if (!note || note.id !== selectedNoteId) return;
+
+        if (loadedNoteIdRef.current !== note.id) {
+            // First load of this note. The cache already includes our own
+            // pending local writes, so this is always our latest version.
+            loadedNoteIdRef.current = note.id;
+            lastContentJsonRef.current = stableStringify(note.content ?? []);
+            setEditorState((prev) => ({ noteId: note.id, version: (prev?.version ?? 0) + 1, content: note.content }));
+            setTitle(note.title ?? '');
+            setSaveError(null);
+            return;
+        }
+
+        // Same note, new snapshot. Only apply changes that came from elsewhere
+        // (another device/tab) and only while the user has nothing buffered.
+        // After a failed save Firestore rolls back the local write; don't let
+        // that rollback wipe what the user typed — keep their text on screen.
+        if (note.has_pending_writes || saveErrorRef.current) return;
+
+        if (!saveTitle.hasPending() && (note.title ?? '') !== titleRef.current) {
+            setTitle(note.title ?? '');
+        }
+
+        if (!saveContent.hasPending()) {
+            const json = stableStringify(note.content ?? []);
+            if (json !== lastContentJsonRef.current) {
+                lastContentJsonRef.current = json;
+                setEditorState((prev) => ({ noteId: note.id, version: (prev?.version ?? 0) + 1, content: note.content }));
+            }
+        }
+    }, [note, selectedNoteId, saveContent, saveTitle]);
+
+    // --- Handlers -------------------------------------------------------------
 
     const handleTitleChange = useCallback(
         (e: React.ChangeEvent<HTMLInputElement>) => {
             const newTitle = e.target.value;
             setTitle(newTitle);
-            // Capture current IDs to prevent stale closure issues
-            if (selectedNoteId && selectedNotebookId) {
-                // Mark this note as having local edits
-                dirtyNotesRef.current.add(selectedNoteId);
-                // Update the cache with the new title (preserve existing content)
-                const existing = dirtyContentCacheRef.current.get(selectedNoteId);
-                dirtyContentCacheRef.current.set(selectedNoteId, {
-                    content: existing?.content ?? localContentState?.data ?? [],
-                    title: newTitle
-                });
-                debouncedSaveTitle(newTitle, selectedNoteId, selectedNotebookId);
+            const noteId = selectedNoteIdRef.current;
+            const notebookId = selectedNotebookIdRef.current;
+            if (noteId && notebookId) {
+                setHasBufferedEdits(true);
+                saveTitle(newTitle, noteId, notebookId);
             }
         },
-        [selectedNoteId, selectedNotebookId, debouncedSaveTitle, localContentState]
+        [saveTitle]
     );
 
     const handleContentChange = useCallback(
         (content: Block[], sourceNoteId: string) => {
-            // CRITICAL: Prevent race conditions where a previous note's editor fires an update
-            // after the selection has changed. This was causing "Content Bleeding".
-            if (sourceNoteId !== selectedNoteId) {
-                console.warn(`[MainView] Race condition avoided: ignored update from ${sourceNoteId} while on ${selectedNoteId}`);
-                return;
-            }
-
-            // Update local state immediately for responsiveness
-            if (selectedNoteId) {
-                setLocalContentState({ id: selectedNoteId, data: content });
-                // Mark this note as having local edits - it should NEVER be overwritten by server data
-                dirtyNotesRef.current.add(selectedNoteId);
-                // Update the cache with the new content (preserve existing title)
-                const existing = dirtyContentCacheRef.current.get(selectedNoteId);
-                dirtyContentCacheRef.current.set(selectedNoteId, {
-                    content: content,
-                    title: existing?.title ?? title
-                });
-            }
-
-            // Capture current IDs to prevent stale closure issues
-            if (selectedNoteId && selectedNotebookId) {
-                debouncedSaveContent(content, selectedNoteId, selectedNotebookId);
+            // Ignore late events from a previous note's editor
+            if (sourceNoteId !== selectedNoteIdRef.current) return;
+            const notebookId = selectedNotebookIdRef.current;
+            if (notebookId) {
+                setHasBufferedEdits(true);
+                saveContent(content, sourceNoteId, notebookId);
             }
         },
-        [selectedNoteId, selectedNotebookId, debouncedSaveContent, title]
+        [saveContent]
     );
 
     const handleRestore = async () => {
         if (!note) return;
         await restoreNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+        selectNote(note.id, note.notebook_id, false);
     };
 
     const handlePermanentDelete = async () => {
         if (!note) return;
-        if (confirm('Permanently delete this note?')) {
+        if (confirm('Permanently delete this note? This cannot be undone.')) {
             await permanentlyDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
+            selectNote(null, null);
         }
     };
+
+    // --- Render ---------------------------------------------------------------
 
     if (!selectedNoteId) {
         return (
@@ -231,7 +231,7 @@ export function MainView() {
         );
     }
 
-    if (!note && !isLoading) {
+    if (!note) {
         return (
             <div className="flex-1 flex items-center justify-center bg-app-bg">
                 <p className="text-app-muted">Note not found</p>
@@ -239,7 +239,8 @@ export function MainView() {
         );
     }
 
-    const isTrashed = !!note?.deleted_at;
+    const isTrashed = !!note.deleted_at;
+    const isSyncing = inflightWrites > 0 || hasBufferedEdits;
 
     return (
         <div className="flex-1 flex flex-col bg-app-bg overflow-hidden transition-all duration-300">
@@ -250,9 +251,10 @@ export function MainView() {
                     value={title}
                     onChange={handleTitleChange}
                     placeholder="Untitled Note"
+                    maxLength={200}
                     readOnly={isTrashed}
                     className={clsx(
-                        "flex-1 text-3xl font-bold bg-transparent text-app-text placeholder-app-muted focus:outline-none transition-opacity",
+                        "flex-1 min-w-0 text-3xl font-bold bg-transparent text-app-text placeholder-app-muted focus:outline-none transition-opacity",
                         isTrashed && "opacity-50"
                     )}
                 />
@@ -275,22 +277,16 @@ export function MainView() {
                         </button>
                     </div>
                 ) : (
-                    <div className="flex items-center gap-2 px-2" title="Sync Status">
-                        {!isOnline ? (
-                            <div className="group relative flex items-center justify-center">
-                                <AlertCircle className="w-5 h-5 text-red-500" />
-                                <div className="absolute top-full mt-2 right-0 w-max px-3 py-1.5 bg-red-700 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10 pointer-events-none">
-                                    Offline - Changes will sync when online
-                                </div>
-                            </div>
-                        ) : (isSaving || updateNote.isPending) ? (
-                            <Loader2 className="w-4 h-4 text-app-primary animate-spin" />
-                        ) : (
-                            <div className="w-2.5 h-2.5 rounded-full bg-green-500" title="All changes saved" />
-                        )}
-                    </div>
+                    <SyncIndicator error={saveError} isOnline={isOnline} isSyncing={isSyncing} />
                 )}
             </div>
+
+            {saveError && !isTrashed && (
+                <div className="mx-8 mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-500 text-sm" role="alert">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>Your latest changes could not be saved: {saveError}</span>
+                </div>
+            )}
 
             {/* Editor Container */}
             <div className={clsx(
@@ -303,19 +299,47 @@ export function MainView() {
                         <span className="font-medium">This note is in the trash. It's read-only until restored.</span>
                     </div>
                 )}
-                {localContent !== null && selectedNoteId ? (
-                    <NoteEditor
-                        key={selectedNoteId}
-                        noteId={selectedNoteId}
-                        content={localContent}
-                        onChange={handleContentChange}
-                        editable={!isTrashed}
-                    />
+                {editorState && editorState.noteId === selectedNoteId ? (
+                    <Suspense fallback={<EditorSpinner />}>
+                        <NoteEditor
+                            key={`${editorState.noteId}:${editorState.version}`}
+                            noteId={editorState.noteId}
+                            content={editorState.content}
+                            onChange={handleContentChange}
+                            editable={!isTrashed}
+                        />
+                    </Suspense>
                 ) : (
-                    <div className="flex items-center justify-center h-32">
-                        <Loader2 className="w-6 h-6 animate-spin text-app-muted" />
-                    </div>
+                    <EditorSpinner />
                 )}
+            </div>
+        </div>
+    );
+}
+
+function SyncIndicator({ error, isOnline, isSyncing }: { error: string | null; isOnline: boolean; isSyncing: boolean }) {
+    let icon: React.ReactNode;
+    let label: string;
+
+    if (error) {
+        icon = <AlertCircle className="w-5 h-5 text-red-500" />;
+        label = 'Save failed';
+    } else if (!isOnline) {
+        icon = <CloudOff className="w-5 h-5 text-amber-500" />;
+        label = 'Offline — changes are saved on this device and will sync when online';
+    } else if (isSyncing) {
+        icon = <Loader2 className="w-4 h-4 text-app-primary animate-spin" />;
+        label = 'Saving…';
+    } else {
+        icon = <div className="w-2.5 h-2.5 rounded-full bg-green-500" />;
+        label = 'All changes saved';
+    }
+
+    return (
+        <div className="group relative flex items-center justify-center px-2" role="status" aria-label={label}>
+            {icon}
+            <div className="absolute top-full mt-2 right-0 w-max max-w-xs px-3 py-1.5 bg-app-surface border border-app-border text-app-text text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10 pointer-events-none">
+                {label}
             </div>
         </div>
     );

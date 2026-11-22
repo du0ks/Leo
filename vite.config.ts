@@ -55,6 +55,19 @@ export default defineConfig(async () => ({
     }),
   ],
 
+  build: {
+    rollupOptions: {
+      output: {
+        // Split rarely-changing vendors so app updates don't re-download them
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return;
+          if (/node_modules\/(firebase|@firebase)\//.test(id)) return 'firebase';
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react';
+        },
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
