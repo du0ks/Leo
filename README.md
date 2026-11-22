@@ -92,6 +92,10 @@ firestore.rules Firestore security rules
 - The desktop app is a plain wrapper around the web build.
 - There are no automated tests.
 
+## Credits
+
+The delete button and bottom drawer are adapted from [Rare UI](https://rareui.com) by Swami Malode (MIT + Commons Clause + Attribution — see `src/components/ui/rareui/LICENSE`).
+
 ## License
 
 MIT

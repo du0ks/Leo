@@ -8,6 +8,7 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { registerFlusher, flushPendingSaves } from '../../lib/pendingSaves';
 import { stableStringify } from '../../lib/firestoreUtils';
 import clsx from 'clsx';
+import { DeleteButton } from '../ui/rareui/LazyDeleteButton';
 import { Loader2, RotateCcw, Trash2, AlertCircle, CloudOff } from 'lucide-react';
 
 // The editor (BlockNote + ProseMirror) is the heaviest part of the bundle;
@@ -200,9 +201,12 @@ export function MainView() {
 
     const handlePermanentDelete = async () => {
         if (!note) return;
-        if (confirm('Permanently delete this note? This cannot be undone.')) {
+        selectNote(null, null);
+        try {
             await permanentlyDeleteNote.mutateAsync({ id: note.id, notebookId: note.notebook_id });
-            selectNote(null, null);
+        } catch (err) {
+            console.error('Failed to delete note:', err);
+            window.alert('Could not delete note. Please try again.');
         }
     };
 
@@ -268,13 +272,13 @@ export function MainView() {
                             <RotateCcw className="w-4 h-4" />
                             Restore
                         </button>
-                        <button
-                            onClick={handlePermanentDelete}
-                            className="p-2 rounded-xl hover:bg-red-500/10 text-red-500 transition-all border border-transparent hover:border-red-500/20"
-                            title="Delete Permanently"
-                        >
-                            <Trash2 className="w-5 h-5" />
-                        </button>
+                        <DeleteButton
+                            size="md"
+                            label="Delete permanently"
+                            confirmLabel="Permanently delete this note"
+                            className="text-red-500 hover:bg-red-500/10"
+                            onConfirm={handlePermanentDelete}
+                        />
                     </div>
                 ) : (
                     <SyncIndicator error={saveError} isOnline={isOnline} isSyncing={isSyncing} />
