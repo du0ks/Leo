@@ -1,11 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
     collection,
     query,
     getDocs,
     getDoc,
     getDocFromCache,
+    getDocsFromCache,
     doc,
     addDoc,
     updateDoc,
@@ -80,6 +81,84 @@ const parseNote = (
 const sortByTitle = (notes: Note[]) =>
     notes.sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
 
+const parseNoteList = (docs: DocumentSnapshot<DocumentData>[], notebookId: string) =>
+    sortByTitle(
+        docs
+            .map((d) => parseNote(d, notebookId, { includeContent: false }))
+            .filter((n) => n.deleted_at === null)
+    );
+
+/**
+ * Warm the note lists of all notebooks in the background, so expanding a
+ * notebook for the first time shows its notes instantly — without keeping a
+ * live listener open per notebook.
+ *
+ * Reads the device's Firestore cache first (instant, no network). Only
+ * notebooks with nothing cached are fetched once from the server.
+ */
+export function usePrefetchNoteLists(notebookIds: string[] | undefined) {
+    const queryClient = useQueryClient();
+    const userId = auth.currentUser?.uid;
+    const idsKey = notebookIds?.join(',') ?? '';
+
+    useEffect(() => {
+        if (!userId || !idsKey) return;
+        let cancelled = false;
+        const missing = idsKey
+            .split(',')
+            .filter((id) => queryClient.getQueryData(['notes', id]) === undefined);
+
+        (async () => {
+            const needServer: string[] = [];
+            await Promise.all(
+                missing.map(async (id) => {
+                    try {
+                        const snap = await getDocsFromCache(query(getNotesRef(id)));
+                        if (cancelled) return;
+                        if (snap.empty) {
+                            needServer.push(id);
+                        } else if (queryClient.getQueryData(['notes', id]) === undefined) {
+                            queryClient.setQueryData(['notes', id], parseNoteList(snap.docs, id));
+                        }
+                    } catch {
+                        needServer.push(id);
+                    }
+                })
+            );
+            await Promise.all(
+                needServer.map(async (id) => {
+                    try {
+                        const snap = await getDocs(query(getNotesRef(id)));
+                        if (!cancelled && queryClient.getQueryData(['notes', id]) === undefined) {
+                            queryClient.setQueryData(['notes', id], parseNoteList(snap.docs, id));
+                        }
+                    } catch (err) {
+                        console.warn('Prefetching notes failed for notebook', id, err);
+                    }
+                })
+            );
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [idsKey, userId, queryClient]);
+}
+
+/** True only if `active` stays true for `delayMs` (avoids spinner flicker). */
+export function useDelayedFlag(active: boolean, delayMs = 250) {
+    const [shown, setShown] = useState(false);
+    useEffect(() => {
+        if (!active) {
+            setShown(false);
+            return;
+        }
+        const t = setTimeout(() => setShown(true), delayMs);
+        return () => clearTimeout(t);
+    }, [active, delayMs]);
+    return shown;
+}
+
 /**
  * Active notes of a notebook, kept live by a snapshot listener.
  * Pass `enabled = false` (e.g. for collapsed notebooks) to avoid opening a
@@ -90,12 +169,7 @@ export function useNotes(notebookId: string | null, enabled = true) {
     const userId = auth.currentUser?.uid;
     const active = enabled && !!notebookId && !!userId;
 
-    const parseList = (docs: DocumentSnapshot<DocumentData>[]) =>
-        sortByTitle(
-            docs
-                .map((d) => parseNote(d, notebookId!, { includeContent: false }))
-                .filter((n) => n.deleted_at === null)
-        );
+    const parseList = (docs: DocumentSnapshot<DocumentData>[]) => parseNoteList(docs, notebookId!);
 
     const result = useQuery({
         queryKey: ['notes', notebookId],

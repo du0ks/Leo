@@ -16,6 +16,8 @@ import {
 } from '../../hooks/useNotebooks';
 import {
     useNotes,
+    usePrefetchNoteLists,
+    useDelayedFlag,
     useTrashedNotes,
     useCreateNote,
     useSoftDeleteNote,
@@ -60,6 +62,8 @@ interface DragItem {
 export function Sidebar() {
     const { user } = useAuth();
     const { data: notebooks, isLoading: notebooksLoading } = useNotebooks();
+    const notebookIds = useMemo(() => notebooks?.map((nb) => nb.id), [notebooks]);
+    usePrefetchNoteLists(notebookIds);
 
     // Local state for creating/editing notebooks
     const [isCreatingNotebook, setIsCreatingNotebook] = useState(false);
@@ -411,6 +415,8 @@ function NotebookItem({
 
     // Only subscribe to a notebook's notes while it is expanded
     const { data: notes, isLoading: notesLoading } = useNotes(notebook.id, isExpanded);
+    // Lists are usually prefetched; only show a spinner if loading is noticeable
+    const showNotesSpinner = useDelayedFlag(notesLoading);
     const createNote = useCreateNote();
 
     const childNotebooks = childrenMap.get(notebook.id) || [];
@@ -561,7 +567,7 @@ function NotebookItem({
             {isExpanded && (
                 <div className="animate-fade-in">
                     {/* Notes */}
-                    {notesLoading ? (
+                    {showNotesSpinner ? (
                         <div className="py-2" style={{ paddingLeft: `${24 + depth * 16}px` }}>
                             <Loader2 size={14} className="animate-spin text-app-muted" />
                         </div>
