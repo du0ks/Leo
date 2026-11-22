@@ -1,4 +1,4 @@
-import { useState, useMemo, createContext, useContext, lazy, Suspense } from 'react';
+import { useState, useMemo, useRef, createContext, useContext, lazy, Suspense } from 'react';
 import {
     FolderPlus, Book, Trash2, Edit2, Check, X,
     ChevronRight, ChevronDown, FileText, Plus,
@@ -39,6 +39,28 @@ const ItemActionsDrawer = lazy(() => import('./ItemActionsDrawer').then((m) => (
 
 /** Opens the mobile actions drawer for a note or notebook. */
 const OpenActionsContext = createContext<(target: ActionTarget) => void>(() => {});
+
+/**
+ * Notes are sorted by title, so typing a title used to make the note jump
+ * around the list on every save. While a note's title input is focused, keep
+ * the list in its previous order (new notes are appended); re-sort on blur.
+ */
+function useStableOrderWhileTitleEditing(notes: Note[] | undefined): Note[] | undefined {
+    const focusedId = useUIStore((s) => s.titleFocusedNoteId);
+    const orderRef = useRef<string[] | null>(null);
+    return useMemo(() => {
+        if (!notes) return notes;
+        const editingHere = focusedId !== null && notes.some((n) => n.id === focusedId);
+        if (!editingHere || !orderRef.current) {
+            orderRef.current = notes.map((n) => n.id);
+            return notes;
+        }
+        const rank = new Map(orderRef.current.map((id, i) => [id, i]));
+        return [...notes].sort(
+            (a, b) => (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER)
+        );
+    }, [notes, focusedId]);
+}
 
 /** "⋯" button shown instead of hover actions below the lg breakpoint (touch devices). */
 function MobileActionsButton({ label, onOpen }: { label: string; onOpen: () => void }) {
@@ -144,19 +166,17 @@ export function Sidebar() {
     }, [notebooks]);
 
     const handleCreateNotebook = async (parentId: string | null = null) => {
-        if (!user || !newNotebookTitle.trim()) return;
+        const title = newNotebookTitle.trim();
+        if (!user || !title) return;
+        // Close the input in the same moment the new notebook appears (optimistic)
+        setNewNotebookTitle('');
+        setIsCreatingNotebook(false);
+        setIsCreatingSubNotebook(null);
         try {
-            await createNotebook.mutateAsync({
-                user_id: user.uid,
-                title: newNotebookTitle.trim(),
-                parent_notebook_id: parentId,
-            });
-            setNewNotebookTitle('');
-            setIsCreatingNotebook(false);
-            setIsCreatingSubNotebook(null);
-        } catch (error: any) {
-            console.error('Failed to create notebook:', error);
-            window.alert('Error creating notebook: ' + (error.message || 'Check your internet or Firestore rules.'));
+            await createNotebook.mutateAsync({ user_id: user.uid, title, parent_notebook_id: parentId });
+        } catch (err) {
+            console.error('Failed to create notebook:', err);
+            window.alert('Could not create notebook: ' + errorMessage(err, 'Please try again.'));
         }
     };
 
@@ -165,9 +185,9 @@ export function Sidebar() {
             setEditingNotebookId(null);
             return;
         }
+        setEditingNotebookId(null);
         try {
             await updateNotebook.mutateAsync({ id, title: editNotebookTitle.trim() });
-            setEditingNotebookId(null);
         } catch (err) {
             console.error('Failed to rename notebook:', err);
             window.alert('Could not rename notebook: ' + errorMessage(err, 'Please try again.'));
@@ -460,9 +480,18 @@ function NotebookItem({
     const toggleNotebookExpand = useUIStore((state) => state.toggleNotebookExpand);
     const openActions = useContext(OpenActionsContext);
     const [deleteOpen, setDeleteOpen] = useState(false);
+    // Animate the contents only when the user expands the notebook — not when
+    // the item re-mounts (e.g. after being moved), which made contents
+    // visibly disappear and slide back in.
+    const animateExpandRef = useRef(false);
+    const toggleExpand = () => {
+        animateExpandRef.current = true;
+        toggleNotebookExpand(notebook.id);
+    };
 
     // Only subscribe to a notebook's notes while it is expanded
-    const { data: notes, isLoading: notesLoading } = useNotes(notebook.id, isExpanded);
+    const { data: sortedNotes, isLoading: notesLoading } = useNotes(notebook.id, isExpanded);
+    const notes = useStableOrderWhileTitleEditing(sortedNotes);
     // Lists are usually prefetched; only show a spinner if loading is noticeable
     const showNotesSpinner = useDelayedFlag(notesLoading);
     const createNote = useCreateNote();
@@ -511,8 +540,9 @@ function NotebookItem({
         setDropRef(el);
     };
 
-    if (isEditing) {
-        return (
+    // Rename input replaces only the row itself, so the notebook's notes and
+    // sub-notebooks stay on screen instead of disappearing while editing.
+    const editRow = isEditing ? (
             <div className="px-2 py-1 flex items-center gap-1" style={{ paddingLeft: `${8 + depth * 16}px` }}>
                 <input
                     autoFocus
@@ -531,11 +561,11 @@ function NotebookItem({
                     <X size={14} />
                 </ActionIcon>
             </div>
-        );
-    }
+    ) : null;
 
     return (
         <div className="select-none">
+            {editRow ?? (
             <div
                 ref={combineRefs}
                 {...attributes}
@@ -547,7 +577,7 @@ function NotebookItem({
                     !isOver && !isDragging && "hover:bg-app-accent-bg"
                 )}
                 style={{ paddingLeft: `${8 + depth * 16}px`, paddingRight: '8px' }}
-                onClick={() => toggleNotebookExpand(notebook.id)}
+                onClick={toggleExpand}
             >
                 {/* Expand/Collapse Chevron */}
                 <div className="text-app-muted group-hover:text-app-primary transition-colors w-4 flex-shrink-0">
@@ -612,10 +642,11 @@ function NotebookItem({
                     />
                 </div>
             </div>
+            )}
 
             {/* Expanded Content: Notes + Sub-Notebooks */}
             {isExpanded && (
-                <div className="animate-fade-in">
+                <div className={clsx(animateExpandRef.current && "animate-fade-in")}>
                     {/* Notes */}
                     {showNotesSpinner ? (
                         <div className="py-2" style={{ paddingLeft: `${24 + depth * 16}px` }}>

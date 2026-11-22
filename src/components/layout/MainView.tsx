@@ -257,6 +257,8 @@ export function MainView() {
                     placeholder="Untitled Note"
                     maxLength={200}
                     readOnly={isTrashed}
+                    onFocus={() => useUIStore.getState().setTitleFocusedNoteId(note.id)}
+                    onBlur={() => useUIStore.getState().setTitleFocusedNoteId(null)}
                     className={clsx(
                         "flex-1 min-w-0 text-3xl font-bold bg-transparent text-app-text placeholder-app-muted focus:outline-none transition-opacity",
                         isTrashed && "opacity-50"

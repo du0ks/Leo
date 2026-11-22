@@ -8,7 +8,7 @@ import {
     getDocFromCache,
     getDocsFromCache,
     doc,
-    addDoc,
+    setDoc,
     updateDoc,
     deleteDoc,
     writeBatch,
@@ -22,6 +22,7 @@ import { db, auth } from '../lib/firebase';
 import { firstSnapshot, toIso } from '../lib/firestoreUtils';
 import { sanitizeTitle } from './useNotebooks';
 import { useUIStore } from '../stores/uiStore';
+import { inBackground } from '../lib/notify';
 import type { Note, NewNote } from '../lib/types';
 
 // Firestore documents are limited to 1 MiB; keep a safe margin (mirrored in UI messages).
@@ -81,11 +82,38 @@ const parseNote = (
 const sortByTitle = (notes: Note[]) =>
     notes.sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
 
+/**
+ * Note moves whose copy/delete hasn't landed in Firestore's local cache yet.
+ * Applied to every list snapshot so a snapshot arriving in that gap (e.g. from
+ * an editor save flushed right before the move) can't show the note in its old
+ * notebook again.
+ */
+const pendingMoves = new Map<string, { from: string; to: string; note: Note }>();
+
+const applyPendingMoves = (docIds: Set<string>, list: Note[], notebookId: string) => {
+    if (pendingMoves.size === 0) return list;
+    // Once the target notebook's snapshot contains the note, the move is in the
+    // local cache and the overlay must go — otherwise it would keep re-adding a
+    // stale copy (e.g. after the note is trashed or renamed).
+    pendingMoves.forEach(({ to }, id) => {
+        if (to === notebookId && docIds.has(id)) pendingMoves.delete(id);
+    });
+    const result = list.filter((n) => pendingMoves.get(n.id)?.from !== notebookId);
+    pendingMoves.forEach(({ to, note }, id) => {
+        if (to === notebookId && !result.some((n) => n.id === id)) result.push(note);
+    });
+    return result;
+};
+
 const parseNoteList = (docs: DocumentSnapshot<DocumentData>[], notebookId: string) =>
     sortByTitle(
-        docs
-            .map((d) => parseNote(d, notebookId, { includeContent: false }))
-            .filter((n) => n.deleted_at === null)
+        applyPendingMoves(
+            new Set(docs.map((d) => d.id)),
+            docs
+                .map((d) => parseNote(d, notebookId, { includeContent: false }))
+                .filter((n) => n.deleted_at === null),
+            notebookId
+        )
     );
 
 /**
@@ -285,23 +313,40 @@ export function saveNoteFields(
     }
 }
 
+// --- Optimistic cache helpers -------------------------------------------------
+// See useNotebooks.ts: patch the cache now, write in the background, resync from
+// Firestore's local cache if the write fails.
+
+type QC = ReturnType<typeof useQueryClient>;
+const TRASHED_KEY = ['notes', 'trashed'];
+
+function patchList(queryClient: QC, key: unknown[], fn: (list: Note[]) => Note[]) {
+    const prev = queryClient.getQueryData<Note[]>(key);
+    if (prev) queryClient.setQueryData(key, fn(prev));
+}
+
+const findCachedNote = (queryClient: QC, notebookId: string, id: string): Note | undefined =>
+    queryClient.getQueryData<Note[]>(['notes', notebookId])?.find((n) => n.id === id) ??
+    queryClient.getQueryData<Note[]>(TRASHED_KEY)?.find((n) => n.id === id);
+
+async function resyncNoteList(queryClient: QC, notebookId: string) {
+    if (!queryClient.getQueryData(['notes', notebookId])) return;
+    const q = query(getNotesRef(notebookId));
+    const snap = await getDocsFromCache(q).catch(() => getDocs(q));
+    queryClient.setQueryData(['notes', notebookId], parseNoteList(snap.docs, notebookId));
+}
+
 // Mutations
 export function useCreateNote() {
+    const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (note: NewNote): Promise<Note> => {
             const safeTitle = sanitizeTitle(note.title || 'Untitled');
             const safeContent = validateContent(note.content);
-            const docRef = await addDoc(getNotesRef(note.notebook_id), {
-                title: safeTitle,
-                content: safeContent,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-                deletedAt: null,
-            });
-
+            const ref = doc(getNotesRef(note.notebook_id)); // ID generated on the client
             const now = new Date().toISOString();
-            return {
-                id: docRef.id,
+            const created: Note = {
+                id: ref.id,
                 notebook_id: note.notebook_id,
                 title: safeTitle,
                 content: safeContent,
@@ -309,8 +354,34 @@ export function useCreateNote() {
                 updated_at: now,
                 deleted_at: null,
             };
+            patchList(queryClient, ['notes', note.notebook_id], (list) =>
+                sortByTitle([...list, { ...created, content: undefined }])
+            );
+            inBackground(
+                setDoc(ref, {
+                    title: safeTitle,
+                    content: safeContent,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                    deletedAt: null,
+                }),
+                'Creating note',
+                () => resyncNoteList(queryClient, note.notebook_id)
+            );
+            return created;
         },
     });
+}
+
+/** Rename a note from outside the editor (list caches update immediately). */
+export function renameNote(queryClient: QC, notebookId: string, id: string, title: string) {
+    const safeTitle = sanitizeTitle(title);
+    patchList(queryClient, ['notes', notebookId], (list) =>
+        sortByTitle(list.map((n) => (n.id === id ? { ...n, title: safeTitle } : n)))
+    );
+    inBackground(saveNoteFields(notebookId, id, { title: safeTitle }), 'Renaming note', () =>
+        resyncNoteList(queryClient, notebookId)
+    );
 }
 
 export function useSoftDeleteNote() {
@@ -318,13 +389,22 @@ export function useSoftDeleteNote() {
 
     return useMutation({
         mutationFn: async ({ id, notebookId }: { id: string; notebookId: string }) => {
-            await updateDoc(doc(getNotesRef(notebookId), id), {
-                deletedAt: serverTimestamp(),
-            });
+            const cached = findCachedNote(queryClient, notebookId, id);
+            patchList(queryClient, ['notes', notebookId], (list) => list.filter((n) => n.id !== id));
+            if (cached) {
+                patchList(queryClient, TRASHED_KEY, (list) => [
+                    { ...cached, deleted_at: new Date().toISOString() },
+                    ...list.filter((n) => n.id !== id),
+                ]);
+            }
+            inBackground(
+                updateDoc(doc(getNotesRef(notebookId), id), { deletedAt: serverTimestamp() }).then(() =>
+                    queryClient.invalidateQueries({ queryKey: TRASHED_KEY })
+                ),
+                'Moving note to trash',
+                () => resyncNoteList(queryClient, notebookId)
+            );
             return { id, notebookId };
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
 }
@@ -334,13 +414,24 @@ export function useRestoreNote() {
 
     return useMutation({
         mutationFn: async ({ id, notebookId }: { id: string; notebookId: string }) => {
-            await updateDoc(doc(getNotesRef(notebookId), id), {
-                deletedAt: null,
-            });
+            const cached = findCachedNote(queryClient, notebookId, id);
+            patchList(queryClient, TRASHED_KEY, (list) => list.filter((n) => n.id !== id));
+            if (cached) {
+                patchList(queryClient, ['notes', notebookId], (list) =>
+                    sortByTitle([...list.filter((n) => n.id !== id), { ...cached, deleted_at: null }])
+                );
+            }
+            inBackground(
+                updateDoc(doc(getNotesRef(notebookId), id), { deletedAt: null }).then(() =>
+                    queryClient.invalidateQueries({ queryKey: TRASHED_KEY })
+                ),
+                'Restoring note',
+                () => {
+                    resyncNoteList(queryClient, notebookId);
+                    queryClient.invalidateQueries({ queryKey: TRASHED_KEY });
+                }
+            );
             return { id, notebookId };
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
 }
@@ -350,11 +441,11 @@ export function usePermanentlyDeleteNote() {
 
     return useMutation({
         mutationFn: async ({ id, notebookId }: { id: string; notebookId: string }) => {
-            await deleteDoc(doc(getNotesRef(notebookId), id));
+            patchList(queryClient, TRASHED_KEY, (list) => list.filter((n) => n.id !== id));
+            inBackground(deleteDoc(doc(getNotesRef(notebookId), id)), 'Deleting note', () =>
+                queryClient.invalidateQueries({ queryKey: TRASHED_KEY })
+            );
             return { id, notebookId };
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
 }
@@ -364,9 +455,11 @@ export function usePermanentlyDeleteNote() {
  *
  * The note keeps its ID, so an open editor stays attached to it. Callers must
  * flush pending editor saves first (see `flushPendingSaves`) so the copy
- * contains the latest content.
+ * contains the latest content. Lists update immediately; the copy + delete
+ * runs in the background.
  */
 export function useMoveNote() {
+    const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({
             id,
@@ -379,26 +472,53 @@ export function useMoveNote() {
         }) => {
             if (fromNotebookId === toNotebookId) return;
 
-            const oldDocRef = doc(getNotesRef(fromNotebookId), id);
-            // Prefer the local cache: it already contains any pending local
-            // edits and does not need the network.
-            let snap = await getDocFromCache(oldDocRef).catch(() => null);
-            if (!snap?.exists()) snap = await getDoc(oldDocRef);
-            if (!snap.exists()) throw new Error('Note not found');
+            const cached = findCachedNote(queryClient, fromNotebookId, id);
+            const entry = cached
+                ? { from: fromNotebookId, to: toNotebookId, note: { ...cached, notebook_id: toNotebookId } }
+                : null;
+            if (entry) pendingMoves.set(id, entry);
+            patchList(queryClient, ['notes', fromNotebookId], (list) => list.filter((n) => n.id !== id));
+            if (cached) {
+                patchList(queryClient, ['notes', toNotebookId], (list) =>
+                    sortByTitle([...list.filter((n) => n.id !== id), { ...cached, notebook_id: toNotebookId }])
+                );
+            }
 
             const ui = useUIStore.getState();
-            if (ui.selectedNoteId === id) {
+            const wasSelected = ui.selectedNoteId === id;
+            if (wasSelected) {
                 // Re-point the open editor before the old document disappears.
                 ui.selectNote(id, toNotebookId, ui.isTrashView);
             }
 
-            const batch = writeBatch(db);
-            batch.set(doc(getNotesRef(toNotebookId), id), {
-                ...snap.data(),
-                updatedAt: serverTimestamp(),
+            const work = (async () => {
+                const oldDocRef = doc(getNotesRef(fromNotebookId), id);
+                // Prefer the local cache: it already contains any pending local
+                // edits and does not need the network.
+                let snap = await getDocFromCache(oldDocRef).catch(() => null);
+                if (!snap?.exists()) snap = await getDoc(oldDocRef);
+                if (!snap.exists()) throw new Error('Note not found');
+
+                const batch = writeBatch(db);
+                batch.set(doc(getNotesRef(toNotebookId), id), {
+                    ...snap.data(),
+                    updatedAt: serverTimestamp(),
+                });
+                batch.delete(oldDocRef);
+                // The overlay is dropped as soon as a snapshot shows the note in
+                // its new notebook (see applyPendingMoves), or when this settles.
+                await batch.commit();
+            })().finally(() => {
+                // Only clear our own entry (a newer move of the same note may own it now)
+                if (entry && pendingMoves.get(id) === entry) pendingMoves.delete(id);
             });
-            batch.delete(oldDocRef);
-            await batch.commit();
+
+            inBackground(work, 'Moving note', () => {
+                resyncNoteList(queryClient, fromNotebookId);
+                resyncNoteList(queryClient, toNotebookId);
+                const now = useUIStore.getState();
+                if (wasSelected && now.selectedNoteId === id) now.selectNote(id, fromNotebookId, now.isTrashView);
+            });
         },
     });
 }
