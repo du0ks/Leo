@@ -303,7 +303,7 @@ export function Sidebar() {
                 />
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
+                <div className="flex-1 overflow-y-auto p-2 no-scrollbar">
                     {notebooksLoading ? (
                         <div className="flex justify-center py-4">
                             <Loader2 className="animate-spin text-app-muted" size={20} />
@@ -571,7 +571,7 @@ function NotebookItem({
                 {...attributes}
                 {...listeners}
                 className={clsx(
-                    "group flex items-center gap-2 py-1.5 rounded-md cursor-pointer text-app-text transition-colors",
+                    "group relative flex items-center gap-2 py-1.5 rounded-md cursor-pointer text-app-text transition-colors [--row-tint:var(--accent-bg)]",
                     isOver && !isDragging && "bg-app-primary/20 ring-1 ring-app-primary",
                     isDragging && "opacity-40",
                     !isOver && !isDragging && "hover:bg-app-accent-bg"
@@ -599,10 +599,9 @@ function NotebookItem({
                     label={`Actions for ${notebook.title}`}
                     onOpen={() => openActions({ type: 'notebook', notebook })}
                 />
-                <div className={clsx(
-                    "hidden lg:flex items-center gap-0.5 transition-opacity",
-                    isExpanded || deleteOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
-                )}>
+                {/* Desktop actions overlay the end of the title instead of reserving
+                    space, so titles use the full width when not hovered. */}
+                <div className={clsx("row-actions gap-0.5", deleteOpen && "row-actions-open")}>
                     <ActionIcon
                         size="xs"
                         variant="subtle"
@@ -762,13 +761,20 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
             {...attributes}
             {...listeners}
             className={clsx(
-                "group flex items-center gap-2 py-1.5 rounded-md cursor-pointer transition-colors text-sm",
+                "group relative flex items-center gap-2 py-1.5 rounded-md cursor-pointer transition-colors text-sm",
                 isDragging && "opacity-40",
                 selectedNoteId === note.id
                     ? "bg-app-primary/10 text-app-primary font-medium"
                     : "text-app-text/80 hover:bg-app-accent-bg hover:text-app-text"
             )}
-            style={{ paddingLeft: `${8 + depth * 16}px`, paddingRight: '8px' }}
+            style={{
+                paddingLeft: `${8 + depth * 16}px`,
+                paddingRight: '8px',
+                // Tint used by the actions overlay to match the row background
+                ['--row-tint' as string]: selectedNoteId === note.id
+                    ? 'color-mix(in srgb, var(--primary) 10%, transparent)'
+                    : 'var(--accent-bg)',
+            }}
             onClick={() => selectNote(note.id, note.notebook_id)}
         >
             <div className="w-4 flex-shrink-0" /> {/* Spacer to align with chevron */}
@@ -781,10 +787,7 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
                 label={`Actions for ${note.title || 'Untitled'}`}
                 onOpen={() => openActions({ type: 'note', note })}
             />
-            <div className={clsx(
-                "hidden lg:flex -my-1 transition-opacity",
-                selectedNoteId === note.id || deleteOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
-            )}>
+            <div className={clsx("row-actions", deleteOpen && "row-actions-open")}>
                 <DeleteButton
                     size="sm"
                     label="Move to trash"
