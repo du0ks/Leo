@@ -7,7 +7,6 @@
  *   element to the next.
  * - `.fx-edge` (and some editor parts, see EDGE_SELECTOR) — a thin light along
  *   the element's border near the cursor.
- * - `.fx-paper` — a permanent, very subtle grain (uses the same textures).
  *
  * This module generates the grain textures once and keeps `--mx`/`--my`
  * (cursor position relative to the element) up to date — only on the hovered
@@ -57,11 +56,10 @@ function makeTextures() {
 }
 
 export function installHoverEffects(): void {
-    // Textures are also used by the (non-hover) paper texture, so always make them
-    makeTextures();
-
     // Hover effects only make sense with a real pointer
     if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+
+    makeTextures();
 
     let x = -1e5;
     let y = -1e5;

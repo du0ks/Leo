@@ -25,9 +25,6 @@ interface UIState {
     /** Desktop hover effects (device preference, stored locally) */
     edgeLight: boolean;
     setEdgeLight: (on: boolean) => void;
-    /** Permanent paper grain on the note area, 0–1 (0 = off) */
-    paperGrain: number;
-    setPaperGrain: (amount: number) => void;
     /** Hover grain strength 0–1 (0 = off) */
     hoverGrain: number;
     setHoverGrain: (amount: number) => void;
@@ -114,8 +111,6 @@ export const useUIStore = create<UIState>()(
             titleFocusedNoteId: null,
             edgeLight: true,
             setEdgeLight: (on) => set({ edgeLight: on }),
-            paperGrain: 0.4,
-            setPaperGrain: (amount) => set({ paperGrain: Math.min(1, Math.max(0, amount)) }),
             hoverGrain: 0.6,
             setHoverGrain: (amount) => set({ hoverGrain: Math.min(1, Math.max(0, amount)) }),
             currentNotebookPath: [],

@@ -672,28 +672,6 @@ button:focus-visible {
   }
 }
 
-/* Paper texture: a permanent, very subtle grain on the note area (all devices).
-   Same viewport-pinned texture as the hover grain, so they line up. */
-.fx-paper {
-  position: relative;
-  isolation: isolate;
-}
-.fx-paper::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image: var(--noise-dark);
-  background-size: 180px 180px;
-  background-attachment: fixed;
-  /* the slider value is scaled down: paper must stay well below the hover grain */
-  opacity: calc(var(--paper-grain, 0.4) * 0.5);
-}
-.dark .fx-paper::before {
-  background-image: var(--noise-light);
-}
-
 @media (hover: hover) and (pointer: fine) {
   /* Edge light on editor content (code blocks, images). The ring is drawn by
      an overlay outside the editor (see hoverEffects.ts) — writing styles into

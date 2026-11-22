@@ -47,8 +47,6 @@ export function SettingsModal() {
     const setEdgeLight = useUIStore((s) => s.setEdgeLight);
     const hoverGrain = useUIStore((s) => s.hoverGrain);
     const setHoverGrain = useUIStore((s) => s.setHoverGrain);
-    const paperGrain = useUIStore((s) => s.paperGrain);
-    const setPaperGrain = useUIStore((s) => s.setPaperGrain);
     const pct = (v: number) => (v === 0 ? 'Off' : `${Math.round(v * 100)}%`);
 
     const content = (
@@ -107,31 +105,12 @@ export function SettingsModal() {
                 </SimpleGrid>
             </section>
 
-            {/* Effects: paper texture everywhere; mouse effects on desktop only */}
+            {/* Effects: desktop only (they react to the mouse) */}
+            {!isMobile && (
             <section>
                 <Text size="sm" fw={600} c="dimmed" tt="uppercase" mb="md" lts="0.05em">
                     Effects
                 </Text>
-
-                <Group justify="space-between" mb={6} wrap="nowrap">
-                    <Text size="sm" fw={500} id="paper-grain-label">Paper texture</Text>
-                    <Text size="xs" c="dimmed">{pct(paperGrain)}</Text>
-                </Group>
-                <Slider
-                    aria-labelledby="paper-grain-label"
-                    min={0}
-                    max={100}
-                    step={5}
-                    value={Math.round(paperGrain * 100)}
-                    onChange={(v) => setPaperGrain(v / 100)}
-                    label={(v) => (v === 0 ? 'Off' : `${v}%`)}
-                    color="var(--primary)"
-                    size="sm"
-                />
-                <Text size="xs" c="dimmed" mt={6} mb={isMobile ? 0 : 'lg'}>A faint, permanent grain behind your notes.</Text>
-
-            {!isMobile && (
-                <>
                     <Group justify="space-between" mb="lg" wrap="nowrap">
                         <Group gap="sm" wrap="nowrap">
                             <div className="p-2 rounded-lg bg-app-accent-bg text-app-primary">
@@ -167,9 +146,8 @@ export function SettingsModal() {
                         size="sm"
                     />
                     <Text size="xs" c="dimmed" mt={6}>Texture on buttons and list items under the mouse. Drag to 0 to turn off.</Text>
-                </>
-            )}
             </section>
+            )}
 
             <section className="flex flex-col items-center">
                 <img src="/leo.png" alt="" className="w-8 h-8 object-contain mb-2 opacity-30" />

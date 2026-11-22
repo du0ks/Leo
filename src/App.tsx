@@ -45,7 +45,6 @@ function AppContent() {
   const sidebarWidth = useUIStore((s) => s.sidebarWidth);
   const edgeLight = useUIStore((s) => s.edgeLight);
   const hoverGrain = useUIStore((s) => s.hoverGrain);
-  const paperGrain = useUIStore((s) => s.paperGrain);
   const layoutRef = useRef<HTMLDivElement>(null);
   const [resizing, setResizing] = useState(false);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
@@ -67,8 +66,7 @@ function AppContent() {
     const root = document.documentElement;
     root.dataset.edgeLight = edgeLight ? 'on' : 'off';
     root.style.setProperty('--grain-opacity', String(hoverGrain));
-    root.style.setProperty('--paper-grain', String(paperGrain));
-  }, [edgeLight, hoverGrain, paperGrain]);
+  }, [edgeLight, hoverGrain]);
 
   // Only show initial auth loading spinner
   if (loading) {
