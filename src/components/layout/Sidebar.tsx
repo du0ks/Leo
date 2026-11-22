@@ -295,7 +295,7 @@ export function Sidebar() {
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
         >
-            <div className="w-64 h-full bg-app-surface border-r border-app-border flex flex-col">
+            <div className="w-full h-full bg-app-surface border-r border-app-border flex flex-col">
                 {/* Header */}
                 <RootDropZone
                     onAddClick={() => setIsCreatingNotebook(true)}
@@ -591,11 +591,8 @@ function NotebookItem({
                     <Book size={16} className="text-app-primary/80 flex-shrink-0" />
                 )}
 
-                {/* Title - only truncate when expanded (icons visible) */}
-                <span className={clsx(
-                    "flex-1 text-sm font-medium",
-                    isExpanded && "truncate"
-                )}>{notebook.title}</span>
+                {/* Title: always one line, ellipsis when too long (full title on hover) */}
+                <span className="flex-1 min-w-0 truncate text-sm font-medium" title={notebook.title}>{notebook.title}</span>
 
                 {/* Action Buttons (desktop: hover icons; mobile: ⋯ opens the drawer) */}
                 <MobileActionsButton
@@ -633,13 +630,15 @@ function NotebookItem({
                     >
                         <Edit2 size={12} />
                     </ActionIcon>
-                    <DeleteButton
-                        size="sm"
-                        label="Move to trash"
-                        confirmLabel="Move notebook and its contents to trash"
-                        onOpenChange={setDeleteOpen}
-                        onConfirm={() => onDelete(notebook.id)}
-                    />
+                    <div className="-my-1">
+                        <DeleteButton
+                            size="sm"
+                            label="Move to trash"
+                            confirmLabel="Move notebook and its contents to trash"
+                            onOpenChange={setDeleteOpen}
+                            onConfirm={() => onDelete(notebook.id)}
+                        />
+                    </div>
                 </div>
             </div>
             )}
@@ -777,10 +776,7 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
                 "flex-shrink-0",
                 selectedNoteId === note.id ? "text-app-primary" : "text-app-muted group-hover:text-app-text"
             )} />
-            <span className={clsx(
-                "flex-1",
-                selectedNoteId === note.id && "truncate"
-            )}>{note.title || 'Untitled'}</span>
+            <span className="flex-1 min-w-0 truncate" title={note.title || 'Untitled'}>{note.title || 'Untitled'}</span>
             <MobileActionsButton
                 label={`Actions for ${note.title || 'Untitled'}`}
                 onOpen={() => openActions({ type: 'note', note })}
@@ -937,7 +933,7 @@ function WastebasketSection() {
                                             {expandedNotebookIds.has(notebook.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                                         </div>
                                         <Book size={14} className="text-app-muted flex-shrink-0" />
-                                        <span className="flex-1 truncate line-through decoration-red-500/50">{notebook.title}</span>
+                                        <span className="flex-1 min-w-0 truncate line-through decoration-red-500/50">{notebook.title}</span>
                                         {notesByNotebook[notebook.id]?.length ? (
                                             <span className="text-[10px] text-app-muted">{notesByNotebook[notebook.id]?.length}</span>
                                         ) : null}
@@ -976,7 +972,7 @@ function WastebasketSection() {
                                                 >
                                                     <div className="w-4 flex-shrink-0" />
                                                     <FileText size={12} className="text-app-muted flex-shrink-0" />
-                                                    <span className="flex-1 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
+                                                    <span className="flex-1 min-w-0 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -1002,7 +998,7 @@ function WastebasketSection() {
                                         >
                                             <div className="w-4 flex-shrink-0" />
                                             <FileText size={14} className="text-app-muted flex-shrink-0" />
-                                            <span className="flex-1 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
+                                            <span className="flex-1 min-w-0 truncate line-through decoration-red-500/50">{note.title || 'Untitled'}</span>
                                             <div className="flex items-center gap-1">
                                                 <button
                                                     title="Restore Note"

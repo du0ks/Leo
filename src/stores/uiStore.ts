@@ -1,10 +1,20 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+/** Desktop sidebar width bounds (px). */
+export const SIDEBAR_MIN_WIDTH = 220;
+export const SIDEBAR_MAX_WIDTH = 400;
+export const SIDEBAR_DEFAULT_WIDTH = 256;
+export const clampSidebarWidth = (w: number) =>
+    Math.round(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, w)));
+
 export type ThemeColor = 'blue' | 'red' | 'yellow' | 'green' | 'grey' | 'black' | 'purple' | 'pink';
 
 interface UIState {
     sidebarOpen: boolean;
+    /** Desktop (lg+) sidebar width in px; mobile always uses the overlay width. */
+    sidebarWidth: number;
+    setSidebarWidth: (width: number) => void;
     expandedNotebooks: Set<string>; // IDs of expanded notebooks
     selectedNoteId: string | null;
     selectedNotebookId: string | null; // Needed for Firebase subcollection queries
@@ -53,6 +63,7 @@ const storage = {
                 ...state,
                 expandedNotebooks: new Set(state.expandedNotebooks || []),
                 currentNotebookPath: state.currentNotebookPath || [],
+                sidebarWidth: clampSidebarWidth(Number(state.sidebarWidth) || SIDEBAR_DEFAULT_WIDTH),
             },
         };
     },
@@ -82,6 +93,8 @@ export const useUIStore = create<UIState>()(
     persist(
         (set) => ({
             sidebarOpen: true,
+            sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
+            setSidebarWidth: (width) => set({ sidebarWidth: clampSidebarWidth(width) }),
             expandedNotebooks: new Set(),
             selectedNoteId: null,
             selectedNotebookId: null,

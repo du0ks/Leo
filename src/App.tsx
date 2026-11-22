@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider, notifyManager } from '@tanstack/react-query';
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
@@ -14,6 +14,7 @@ import { SettingsModal } from './components/settings/SettingsModal';
 import { LogOut, Menu, Loader2, Settings } from 'lucide-react';
 import clsx from 'clsx';
 import { UpdatePrompt } from './components/ui/UpdatePrompt';
+import { SidebarResizer } from './components/layout/SidebarResizer';
 
 // Deliver cache updates in a microtask instead of the default setTimeout(0), so
 // optimistic updates render in the same frame as the UI change that caused them
@@ -41,6 +42,9 @@ function AppContent() {
   const darkMode = useUIStore((s) => s.darkMode);
   const themeColor = useUIStore((s) => s.themeColor);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  const sidebarWidth = useUIStore((s) => s.sidebarWidth);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const [resizing, setResizing] = useState(false);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const setSettingsOpen = useUIStore((s) => s.setSettingsOpen);
 
@@ -108,18 +112,26 @@ function AppContent() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Sidebar */}
+      <div
+        ref={layoutRef}
+        className="flex-1 flex overflow-hidden relative"
+        style={{ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties}
+      >
+        {/* Sidebar: fixed overlay width on mobile, user-resizable on desktop */}
         <aside
           className={clsx(
-            "absolute inset-y-0 left-0 lg:relative z-20 transition-all duration-300 ease-in-out bg-app-surface border-r border-app-border overflow-hidden",
-            sidebarOpen ? "w-64 translate-x-0" : "w-0 -translate-x-full lg:translate-x-0"
+            "absolute inset-y-0 left-0 lg:relative z-20 shrink-0 bg-app-surface border-r border-app-border overflow-hidden",
+            // No width animation while dragging, or the panel lags behind the cursor
+            !resizing && "transition-all duration-300 ease-in-out",
+            sidebarOpen ? "w-64 lg:w-[var(--sidebar-w)] translate-x-0" : "w-0 -translate-x-full lg:translate-x-0"
           )}
         >
-          <div className="w-64 h-full">
+          <div className="w-64 lg:w-[var(--sidebar-w)] h-full">
             <Sidebar />
           </div>
         </aside>
+
+        {sidebarOpen && <SidebarResizer containerRef={layoutRef} onResizingChange={setResizing} />}
 
         {/* Overlay for mobile */}
         {sidebarOpen && (

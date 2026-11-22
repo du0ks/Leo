@@ -214,7 +214,7 @@ export function MainView() {
 
     if (!selectedNoteId) {
         return (
-            <div className="flex-1 flex items-center justify-center bg-app-bg">
+            <div className="flex-1 min-w-0 flex items-center justify-center bg-app-bg">
                 <div className="text-center animate-fade-in group">
                     <div className="w-24 h-24 mx-auto mb-6 transition-transform duration-500 group-hover:scale-110">
                         <img src="/leo.png" alt="Leo" className="w-full h-full object-contain opacity-20 group-hover:opacity-40 transition-opacity" />
@@ -229,7 +229,7 @@ export function MainView() {
 
     if (isLoading && !note) {
         return (
-            <div className="flex-1 flex items-center justify-center bg-app-bg">
+            <div className="flex-1 min-w-0 flex items-center justify-center bg-app-bg">
                 <Loader2 className="w-8 h-8 animate-spin text-app-primary" />
             </div>
         );
@@ -237,7 +237,7 @@ export function MainView() {
 
     if (!note) {
         return (
-            <div className="flex-1 flex items-center justify-center bg-app-bg">
+            <div className="flex-1 min-w-0 flex items-center justify-center bg-app-bg">
                 <p className="text-app-muted">Note not found</p>
             </div>
         );
@@ -247,7 +247,7 @@ export function MainView() {
     const isSyncing = inflightWrites > 0 || hasBufferedEdits;
 
     return (
-        <div className="flex-1 flex flex-col bg-app-bg overflow-hidden transition-all duration-300">
+        <div className="flex-1 min-w-0 flex flex-col bg-app-bg overflow-hidden">
             {/* Title Bar */}
             <div className="flex items-center gap-3 px-8 py-6 border-b border-app-border bg-app-surface/20">
                 <input
