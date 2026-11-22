@@ -250,26 +250,29 @@ export function MainView() {
         <div className="flex-1 min-w-0 flex flex-col bg-app-bg overflow-hidden">
             {/* Title Bar */}
             <div className="flex items-center gap-3 px-8 py-6 border-b border-app-border bg-app-surface/20">
-                <input
-                    type="text"
-                    value={title}
-                    onChange={handleTitleChange}
-                    placeholder="Untitled Note"
-                    maxLength={200}
-                    readOnly={isTrashed}
-                    onFocus={() => useUIStore.getState().setTitleFocusedNoteId(note.id)}
-                    onBlur={() => useUIStore.getState().setTitleFocusedNoteId(null)}
-                    className={clsx(
-                        "flex-1 min-w-0 text-3xl font-bold bg-transparent text-app-text placeholder-app-muted focus:outline-none transition-opacity",
-                        isTrashed && "opacity-50"
-                    )}
-                />
+                {/* Wrapper carries the edge light (inputs can't have pseudo-elements) */}
+                <div className="fx-edge flex-1 min-w-0 rounded-lg">
+                    <input
+                        type="text"
+                        value={title}
+                        onChange={handleTitleChange}
+                        placeholder="Untitled Note"
+                        maxLength={200}
+                        readOnly={isTrashed}
+                        onFocus={() => useUIStore.getState().setTitleFocusedNoteId(note.id)}
+                        onBlur={() => useUIStore.getState().setTitleFocusedNoteId(null)}
+                        className={clsx(
+                            "w-full text-3xl font-bold bg-transparent text-app-text placeholder-app-muted focus:outline-none transition-opacity",
+                            isTrashed && "opacity-50"
+                        )}
+                    />
+                </div>
 
                 {isTrashed ? (
                     <div className="flex items-center gap-2">
                         <button
                             onClick={handleRestore}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 text-green-500 hover:bg-green-500/20 transition-all text-sm font-semibold border border-green-500/20"
+                            className="fx-surface fx-edge flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 text-green-500 hover:bg-green-500/20 transition-all text-sm font-semibold border border-green-500/20"
                         >
                             <RotateCcw className="w-4 h-4" />
                             Restore
