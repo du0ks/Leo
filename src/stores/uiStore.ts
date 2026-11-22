@@ -22,6 +22,12 @@ interface UIState {
     darkMode: boolean;
     themeColor: ThemeColor;
     settingsOpen: boolean;
+    /** Desktop hover effects (device preference, stored locally) */
+    edgeLight: boolean;
+    setEdgeLight: (on: boolean) => void;
+    /** Hover grain strength 0–1 (0 = off) */
+    hoverGrain: number;
+    setHoverGrain: (amount: number) => void;
     /** Note whose title input is focused (sidebar keeps its order stable meanwhile). */
     titleFocusedNoteId: string | null;
 
@@ -103,6 +109,10 @@ export const useUIStore = create<UIState>()(
             themeColor: 'yellow',
             settingsOpen: false,
             titleFocusedNoteId: null,
+            edgeLight: true,
+            setEdgeLight: (on) => set({ edgeLight: on }),
+            hoverGrain: 0.6,
+            setHoverGrain: (amount) => set({ hoverGrain: Math.min(1, Math.max(0, amount)) }),
             currentNotebookPath: [],
 
             toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),

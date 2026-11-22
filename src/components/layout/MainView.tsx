@@ -269,7 +269,7 @@ export function MainView() {
                     <div className="flex items-center gap-2">
                         <button
                             onClick={handleRestore}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 text-green-500 hover:bg-green-500/20 transition-all text-sm font-semibold border border-green-500/20"
+                            className="fx-surface fx-edge flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 text-green-500 hover:bg-green-500/20 transition-all text-sm font-semibold border border-green-500/20"
                         >
                             <RotateCcw className="w-4 h-4" />
                             Restore

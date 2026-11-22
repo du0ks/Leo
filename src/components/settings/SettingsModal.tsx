@@ -1,5 +1,5 @@
-import { ActionIcon, Divider, Group, Modal, SimpleGrid, Stack, Switch, Text } from '@mantine/core';
-import { Check, Moon, Sun } from 'lucide-react';
+import { ActionIcon, Divider, Group, Modal, SimpleGrid, Slider, Stack, Switch, Text } from '@mantine/core';
+import { Check, Moon, Sparkles, Sun } from 'lucide-react';
 import { useUIStore, ThemeColor } from '../../stores/uiStore';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import clsx from 'clsx';
@@ -43,6 +43,10 @@ export function SettingsModal() {
     };
 
     const isMobile = useMediaQuery(MOBILE_QUERY);
+    const edgeLight = useUIStore((s) => s.edgeLight);
+    const setEdgeLight = useUIStore((s) => s.setEdgeLight);
+    const hoverGrain = useUIStore((s) => s.hoverGrain);
+    const setHoverGrain = useUIStore((s) => s.setHoverGrain);
 
     const content = (
         <Stack gap="xl" py="md">
@@ -99,6 +103,51 @@ export function SettingsModal() {
                     ))}
                 </SimpleGrid>
             </section>
+
+            {/* Effects: desktop only (they react to the mouse) */}
+            {!isMobile && (
+                <section>
+                    <Text size="sm" fw={600} c="dimmed" tt="uppercase" mb="md" lts="0.05em">
+                        Effects
+                    </Text>
+
+                    <Group justify="space-between" mb="lg" wrap="nowrap">
+                        <Group gap="sm" wrap="nowrap">
+                            <div className="p-2 rounded-lg bg-app-accent-bg text-app-primary">
+                                <Sparkles size={20} />
+                            </div>
+                            <div>
+                                <Text size="sm" fw={500}>Edge light</Text>
+                                <Text size="xs" c="dimmed">Light up borders near the mouse</Text>
+                            </div>
+                        </Group>
+                        <Switch
+                            checked={edgeLight}
+                            onChange={(event) => setEdgeLight(event.currentTarget.checked)}
+                            size="md"
+                            color="var(--primary)"
+                            aria-label="Edge light"
+                        />
+                    </Group>
+
+                    <Group justify="space-between" mb={6} wrap="nowrap">
+                        <Text size="sm" fw={500} id="hover-grain-label">Hover grain</Text>
+                        <Text size="xs" c="dimmed">{hoverGrain === 0 ? 'Off' : `${Math.round(hoverGrain * 100)}%`}</Text>
+                    </Group>
+                    <Slider
+                        aria-labelledby="hover-grain-label"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={Math.round(hoverGrain * 100)}
+                        onChange={(v) => setHoverGrain(v / 100)}
+                        label={(v) => (v === 0 ? 'Off' : `${v}%`)}
+                        color="var(--primary)"
+                        size="sm"
+                    />
+                    <Text size="xs" c="dimmed" mt={6}>Texture on buttons and list items under the mouse. Drag to 0 to turn off.</Text>
+                </section>
+            )}
 
             <section className="flex flex-col items-center">
                 <img src="/leo.png" alt="" className="w-8 h-8 object-contain mb-2 opacity-30" />

@@ -295,7 +295,7 @@ export function Sidebar() {
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
         >
-            <div className="w-full h-full bg-app-surface border-r border-app-border flex flex-col">
+            <div className="fx-edge w-full h-full bg-app-surface border-r border-app-border flex flex-col">
                 {/* Header */}
                 <RootDropZone
                     onAddClick={() => setIsCreatingNotebook(true)}
@@ -442,6 +442,7 @@ function RootDropZone({ onAddClick, isDragging }: { onAddClick: () => void; isDr
                 color="gray"
                 onClick={onAddClick}
                 title="New Notebook"
+                className="fx-surface fx-edge"
             >
                 <FolderPlus size={18} />
             </ActionIcon>
@@ -571,7 +572,7 @@ function NotebookItem({
                 {...attributes}
                 {...listeners}
                 className={clsx(
-                    "group relative flex items-center gap-2 py-1.5 rounded-md cursor-pointer text-app-text transition-colors [--row-tint:var(--accent-bg)]",
+                    "group relative flex items-center gap-2 py-1.5 rounded-md cursor-pointer text-app-text transition-colors [--actions-w:100px] fx-surface",
                     isOver && !isDragging && "bg-app-primary/20 ring-1 ring-app-primary",
                     isDragging && "opacity-40",
                     !isOver && !isDragging && "hover:bg-app-accent-bg"
@@ -592,7 +593,7 @@ function NotebookItem({
                 )}
 
                 {/* Title: always one line, ellipsis when too long (full title on hover) */}
-                <span className="flex-1 min-w-0 truncate text-sm font-medium" title={notebook.title}>{notebook.title}</span>
+                <span className="row-title flex-1 min-w-0 truncate text-sm font-medium" title={notebook.title}>{notebook.title}</span>
 
                 {/* Action Buttons (desktop: hover icons; mobile: ⋯ opens the drawer) */}
                 <MobileActionsButton
@@ -761,7 +762,7 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
             {...attributes}
             {...listeners}
             className={clsx(
-                "group relative flex items-center gap-2 py-1.5 rounded-md cursor-pointer transition-colors text-sm",
+                "group relative flex items-center gap-2 py-1.5 rounded-md cursor-pointer transition-colors text-sm fx-surface",
                 isDragging && "opacity-40",
                 selectedNoteId === note.id
                     ? "bg-app-primary/10 text-app-primary font-medium"
@@ -770,10 +771,7 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
             style={{
                 paddingLeft: `${8 + depth * 16}px`,
                 paddingRight: '8px',
-                // Tint used by the actions overlay to match the row background
-                ['--row-tint' as string]: selectedNoteId === note.id
-                    ? 'color-mix(in srgb, var(--primary) 10%, transparent)'
-                    : 'var(--accent-bg)',
+                ['--actions-w' as string]: '28px', // width of the trash icon (see .row-title)
             }}
             onClick={() => selectNote(note.id, note.notebook_id)}
         >
@@ -782,7 +780,7 @@ function NoteItem({ note, depth }: { note: Note; depth: number }) {
                 "flex-shrink-0",
                 selectedNoteId === note.id ? "text-app-primary" : "text-app-muted group-hover:text-app-text"
             )} />
-            <span className="flex-1 min-w-0 truncate" title={note.title || 'Untitled'}>{note.title || 'Untitled'}</span>
+            <span className="row-title flex-1 min-w-0 truncate" title={note.title || 'Untitled'}>{note.title || 'Untitled'}</span>
             <MobileActionsButton
                 label={`Actions for ${note.title || 'Untitled'}`}
                 onOpen={() => openActions({ type: 'note', note })}
@@ -897,7 +895,7 @@ function WastebasketSection() {
         <div className="select-none">
             <div
                 className={clsx(
-                    "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
+                    "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors fx-surface",
                     isExpanded ? "text-red-500 bg-red-500/5" : "text-app-muted hover:text-red-500 hover:bg-app-accent-bg"
                 )}
                 onClick={() => setIsExpanded(!isExpanded)}
@@ -929,7 +927,7 @@ function WastebasketSection() {
                             {trashedNotebooks?.map((notebook) => (
                                 <div key={notebook.id} className="space-y-0.5">
                                     <div
-                                        className="group flex items-center gap-2 px-2 py-1.5 rounded-md transition-all text-sm opacity-75 hover:opacity-100 text-app-text/70 hover:bg-app-accent-bg cursor-pointer"
+                                        className="group flex items-center gap-2 px-2 py-1.5 rounded-md transition-all text-sm opacity-75 hover:opacity-100 fx-surface text-app-text/70 hover:bg-app-accent-bg cursor-pointer"
                                         onClick={() => toggleNotebookExpand(notebook.id)}
                                     >
                                         <div className="w-4 flex-shrink-0 text-app-muted">
@@ -966,7 +964,7 @@ function WastebasketSection() {
                                                 <div
                                                     key={note.id}
                                                     className={clsx(
-                                                        "group flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-all text-xs opacity-75 hover:opacity-100",
+                                                        "group flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-all text-xs opacity-75 hover:opacity-100 fx-surface",
                                                         selectedNoteId === note.id
                                                             ? "bg-red-500/10 text-red-500"
                                                             : "text-app-text/60 hover:bg-app-accent-bg"
@@ -992,7 +990,7 @@ function WastebasketSection() {
                                         <div
                                             key={note.id}
                                             className={clsx(
-                                                "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-all text-sm opacity-75 hover:opacity-100",
+                                                "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-all text-sm opacity-75 hover:opacity-100 fx-surface",
                                                 selectedNoteId === note.id
                                                     ? "bg-red-500/10 text-red-500"
                                                     : "text-app-text/70 hover:bg-app-accent-bg"

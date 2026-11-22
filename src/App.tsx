@@ -43,6 +43,8 @@ function AppContent() {
   const themeColor = useUIStore((s) => s.themeColor);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const sidebarWidth = useUIStore((s) => s.sidebarWidth);
+  const edgeLight = useUIStore((s) => s.edgeLight);
+  const hoverGrain = useUIStore((s) => s.hoverGrain);
   const layoutRef = useRef<HTMLDivElement>(null);
   const [resizing, setResizing] = useState(false);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
@@ -58,6 +60,13 @@ function AppContent() {
     root.style.colorScheme = darkMode ? 'dark' : 'light';
     root.setAttribute('data-theme', themeColor);
   }, [darkMode, themeColor]);
+
+  // Desktop hover effects (see lib/hoverEffects.ts and index.css)
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.edgeLight = edgeLight ? 'on' : 'off';
+    root.style.setProperty('--grain-opacity', String(hoverGrain));
+  }, [edgeLight, hoverGrain]);
 
   // Only show initial auth loading spinner
   if (loading) {
@@ -82,7 +91,7 @@ function AppContent() {
         <div className="flex items-center gap-3">
           <button
             onClick={toggleSidebar}
-            className="app-header-vibrant-button"
+            className="app-header-vibrant-button fx-surface fx-edge"
             title="Toggle Sidebar"
           >
             <Menu className="w-5 h-5" />
@@ -97,14 +106,14 @@ function AppContent() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setSettingsOpen(true)}
-            className="app-header-vibrant-button group"
+            className="app-header-vibrant-button group fx-surface fx-edge"
             title="Settings"
           >
             <Settings className="w-5 h-5 transition-transform group-hover:rotate-45" />
           </button>
           <button
             onClick={signOut}
-            className="app-header-vibrant-button hover:!bg-red-500/20"
+            className="app-header-vibrant-button hover:!bg-red-500/20 fx-surface fx-edge"
             title="Sign out"
           >
             <LogOut className="w-5 h-5" />

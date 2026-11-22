@@ -4,9 +4,12 @@ import App from './App';
 import '@blocknote/core/fonts/inter.css';
 import './index.css';
 import './App.css';
+import { installHoverEffects } from './lib/hoverEffects';
 
 // Apply dark mode class to document by default
 document.documentElement.classList.add('dark');
+
+installHoverEffects();
 
 /**
  * Standalone SW recovery: runs OUTSIDE React so it works even when
