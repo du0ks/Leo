@@ -8,7 +8,8 @@ import {
     useSoftDeleteNotebook,
     useUpdateNotebook,
 } from '../../hooks/useNotebooks';
-import { useCreateNote, useMoveNote, useSoftDeleteNote, saveNoteFields } from '../../hooks/useNotes';
+import { useCreateNote, useMoveNote, useSoftDeleteNote, renameNote } from '../../hooks/useNotes';
+import { useQueryClient } from '@tanstack/react-query';
 import { useUIStore } from '../../stores/uiStore';
 import { flushPendingSaves } from '../../lib/pendingSaves';
 import type { Note, Notebook } from '../../lib/types';
@@ -44,6 +45,7 @@ export function ItemActionsDrawer({
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
+    const queryClient = useQueryClient();
     const createNote = useCreateNote();
     const createNotebook = useCreateNotebook();
     const updateNotebook = useUpdateNotebook();
@@ -157,10 +159,7 @@ export function ItemActionsDrawer({
             } else if (target.type === 'notebook') {
                 await updateNotebook.mutateAsync({ id: target.notebook.id, title: value });
             } else {
-                // Local write is applied instantly; don't wait for the server
-                saveNoteFields(target.note.notebook_id, target.note.id, { title: value }).catch((err) =>
-                    console.error('Rename failed:', err)
-                );
+                renameNote(queryClient, target.note.notebook_id, target.note.id, value);
             }
         });
     };

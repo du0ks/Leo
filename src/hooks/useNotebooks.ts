@@ -3,8 +3,9 @@ import { useEffect, useMemo } from 'react';
 import {
     collection,
     getDocs,
+    getDocsFromCache,
     doc,
-    addDoc,
+    setDoc,
     updateDoc,
     serverTimestamp,
     onSnapshot,
@@ -14,7 +15,8 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { commitInChunks, firstSnapshot, toIso } from '../lib/firestoreUtils';
-import type { Notebook, NewNotebook } from '../lib/types';
+import { inBackground } from '../lib/notify';
+import type { Note, Notebook, NewNotebook } from '../lib/types';
 
 // Security: Input validation constants (mirrored in firestore.rules)
 const MAX_TITLE_LENGTH = 200;
@@ -48,8 +50,34 @@ const parseNotebook = (docSnap: QueryDocumentSnapshot<DocumentData>, userId: str
     };
 };
 
+/**
+ * Changes whose Firestore writes haven't been issued yet (e.g. a cascade that
+ * first has to fetch notes). Applied on top of every snapshot so an unrelated
+ * snapshot arriving in that gap can't briefly undo the optimistic change.
+ * `null` = removed.
+ */
+const notebookOverlay = new Map<string, Partial<Notebook> | null>();
+
+const applyOverlay = (list: Notebook[]) => {
+    if (notebookOverlay.size === 0) return list;
+    const ids = new Set(list.map((nb) => nb.id));
+    // Drop entries the local cache already reflects, so a stale overlay can
+    // never mask later changes (e.g. while offline, when commits never settle).
+    notebookOverlay.forEach((patch, id) => {
+        const nb = list.find((n) => n.id === id);
+        if (patch === null ? !ids.has(id) : nb && (nb.deleted_at === null) === (patch.deleted_at === null)) {
+            notebookOverlay.delete(id);
+        }
+    });
+    return list.flatMap((nb) => {
+        if (!notebookOverlay.has(nb.id)) return [nb];
+        const patch = notebookOverlay.get(nb.id);
+        return patch === null ? [] : [{ ...nb, ...patch }];
+    });
+};
+
 const parseAll = (snapshot: QuerySnapshot<DocumentData>, userId: string) =>
-    snapshot.docs.map((d) => parseNotebook(d, userId));
+    applyOverlay(snapshot.docs.map((d) => parseNotebook(d, userId)));
 
 const notebooksKey = (userId: string | undefined) => ['notebooks', userId ?? 'anon'];
 
@@ -151,22 +179,38 @@ async function getNotesOf(notebookIds: string[]) {
     return snapshots.flatMap((s) => s.docs);
 }
 
+// --- Optimistic cache helpers -------------------------------------------------
+//
+// Mutations patch the React Query cache synchronously so the UI changes in the
+// same frame as the user's action, then write to Firestore in the background.
+// (Waiting for the server made rows snap back, vanish and reappear.) If a write
+// fails, the cache is re-synced from Firestore's local cache.
+
+type QC = ReturnType<typeof useQueryClient>;
+
+function patchNotebooks(queryClient: QC, fn: (list: Notebook[]) => Notebook[]) {
+    const key = notebooksKey(auth.currentUser?.uid);
+    const prev = queryClient.getQueryData<Notebook[]>(key);
+    if (prev) queryClient.setQueryData(key, fn(prev));
+}
+
+/** Replace the cached notebooks with what Firestore currently holds locally. */
+async function resyncNotebooks(queryClient: QC) {
+    const userId = requireUid();
+    const snapshot = await getDocsFromCache(getNotebooksRef()).catch(() => getDocs(getNotebooksRef()));
+    queryClient.setQueryData(notebooksKey(userId), parseAll(snapshot, userId));
+}
+
 // Create notebook (supports sub-notebooks)
 export function useCreateNotebook() {
+    const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (notebook: NewNotebook): Promise<Notebook> => {
             const safeTitle = sanitizeTitle(notebook.title || 'Untitled') || 'Untitled';
-            const docRef = await addDoc(getNotebooksRef(), {
-                title: safeTitle,
-                parentNotebookId: notebook.parent_notebook_id || null,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-                deletedAt: null,
-            });
-
+            const ref = doc(getNotebooksRef()); // ID generated on the client
             const now = new Date().toISOString();
-            return {
-                id: docRef.id,
+            const created: Notebook = {
+                id: ref.id,
                 user_id: requireUid(),
                 title: safeTitle,
                 parent_notebook_id: notebook.parent_notebook_id || null,
@@ -174,20 +218,36 @@ export function useCreateNotebook() {
                 updated_at: now,
                 deleted_at: null,
             };
+            patchNotebooks(queryClient, (list) => [...list, created]);
+            inBackground(
+                setDoc(ref, {
+                    title: safeTitle,
+                    parentNotebookId: created.parent_notebook_id,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                    deletedAt: null,
+                }),
+                'Creating notebook',
+                () => resyncNotebooks(queryClient)
+            );
+            return created;
         },
     });
 }
 
 // Update notebook title
 export function useUpdateNotebook() {
+    const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, title }: { id: string; title: string }) => {
             const safeTitle = sanitizeTitle(title);
             if (!safeTitle) return;
-            await updateDoc(doc(getNotebooksRef(), id), {
-                title: safeTitle,
-                updatedAt: serverTimestamp(),
-            });
+            patchNotebooks(queryClient, (list) => list.map((nb) => (nb.id === id ? { ...nb, title: safeTitle } : nb)));
+            inBackground(
+                updateDoc(doc(getNotebooksRef(), id), { title: safeTitle, updatedAt: serverTimestamp() }),
+                'Renaming notebook',
+                () => resyncNotebooks(queryClient)
+            );
         },
     });
 }
@@ -204,13 +264,35 @@ export function useMoveNotebook() {
                     throw new Error('Cannot move a notebook into itself or one of its sub-notebooks.');
                 }
             }
-            await updateDoc(doc(getNotebooksRef(), id), {
-                parentNotebookId: newParentId,
-                updatedAt: serverTimestamp(),
-            });
+            patchNotebooks(queryClient, (list) =>
+                list.map((nb) => (nb.id === id ? { ...nb, parent_notebook_id: newParentId } : nb))
+            );
+            inBackground(
+                updateDoc(doc(getNotebooksRef(), id), { parentNotebookId: newParentId, updatedAt: serverTimestamp() }),
+                'Moving notebook',
+                () => resyncNotebooks(queryClient)
+            );
         },
     });
 }
+
+/** Mark a notebook subtree as trashed/restored in the cache right away. */
+function patchDeleted(queryClient: QC, ids: string[], deletedAt: string | null) {
+    const set = new Set(ids);
+    const patch = { deleted_at: deletedAt };
+    ids.forEach((id) => notebookOverlay.set(id, patch));
+    patchNotebooks(queryClient, (list) => list.map((nb) => (set.has(nb.id) ? { ...nb, deleted_at: deletedAt } : nb)));
+    return patch;
+}
+
+/**
+ * Drop overlay entries once their writes are in Firestore's local cache —
+ * only those still owned by this operation (a newer one may have replaced them).
+ */
+const clearOverlay = (ids: string[], owner: Partial<Notebook> | null) =>
+    ids.forEach((id) => {
+        if (notebookOverlay.get(id) === owner) notebookOverlay.delete(id);
+    });
 
 // Soft delete notebook (cascades to children and notes) — batched writes
 export function useSoftDeleteNotebook() {
@@ -219,21 +301,24 @@ export function useSoftDeleteNotebook() {
     return useMutation({
         mutationFn: async (id: string) => {
             const ids = await getNotebookSubtree(id, queryClient);
-            const notes = await getNotesOf(ids);
-            const deletedAt = serverTimestamp();
-            await commitInChunks([
-                ...ids.map((nbId) => ({
-                    type: 'update' as const,
-                    ref: doc(getNotebooksRef(), nbId),
-                    data: { deletedAt },
-                })),
-                ...notes
-                    .filter((n) => !n.data().deletedAt)
-                    .map((n) => ({ type: 'update' as const, ref: n.ref, data: { deletedAt } })),
-            ]);
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
+            const owner = patchDeleted(queryClient, ids, new Date().toISOString());
+
+            const work = (async () => {
+                const notes = await getNotesOf(ids);
+                const deletedAt = serverTimestamp();
+                await commitInChunks([
+                    ...ids.map((nbId) => ({
+                        type: 'update' as const,
+                        ref: doc(getNotebooksRef(), nbId),
+                        data: { deletedAt },
+                    })),
+                    ...notes
+                        .filter((n) => !n.data().deletedAt)
+                        .map((n) => ({ type: 'update' as const, ref: n.ref, data: { deletedAt } })),
+                ]);
+                queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
+            })().finally(() => clearOverlay(ids, owner));
+            inBackground(work, 'Moving notebook to trash', () => resyncNotebooks(queryClient));
         },
     });
 }
@@ -245,18 +330,21 @@ export function useRestoreNotebook() {
     return useMutation({
         mutationFn: async (id: string) => {
             const ids = await getNotebookSubtree(id, queryClient);
-            const notes = await getNotesOf(ids);
-            await commitInChunks([
-                ...ids.map((nbId) => ({
-                    type: 'update' as const,
-                    ref: doc(getNotebooksRef(), nbId),
-                    data: { deletedAt: null },
-                })),
-                ...notes.map((n) => ({ type: 'update' as const, ref: n.ref, data: { deletedAt: null } })),
-            ]);
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
+            const owner = patchDeleted(queryClient, ids, null);
+
+            const work = (async () => {
+                const notes = await getNotesOf(ids);
+                await commitInChunks([
+                    ...ids.map((nbId) => ({
+                        type: 'update' as const,
+                        ref: doc(getNotebooksRef(), nbId),
+                        data: { deletedAt: null },
+                    })),
+                    ...notes.map((n) => ({ type: 'update' as const, ref: n.ref, data: { deletedAt: null } })),
+                ]);
+                queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
+            })().finally(() => clearOverlay(ids, owner));
+            inBackground(work, 'Restoring notebook', () => resyncNotebooks(queryClient));
         },
     });
 }
@@ -268,14 +356,21 @@ export function usePermanentlyDeleteNotebook() {
     return useMutation({
         mutationFn: async (id: string) => {
             const ids = await getNotebookSubtree(id, queryClient);
-            const notes = await getNotesOf(ids);
-            await commitInChunks([
-                ...notes.map((n) => ({ type: 'delete' as const, ref: n.ref })),
-                ...ids.map((nbId) => ({ type: 'delete' as const, ref: doc(getNotebooksRef(), nbId) })),
-            ]);
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
+            const set = new Set(ids);
+            const owner = null;
+            ids.forEach((nbId) => notebookOverlay.set(nbId, owner));
+            patchNotebooks(queryClient, (list) => list.filter((nb) => !set.has(nb.id)));
+            queryClient.setQueryData<Note[]>(['notes', 'trashed'], (old) => old?.filter((n) => !set.has(n.notebook_id)));
+
+            const work = (async () => {
+                const notes = await getNotesOf(ids);
+                await commitInChunks([
+                    ...notes.map((n) => ({ type: 'delete' as const, ref: n.ref })),
+                    ...ids.map((nbId) => ({ type: 'delete' as const, ref: doc(getNotebooksRef(), nbId) })),
+                ]);
+                queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
+            })().finally(() => clearOverlay(ids, owner));
+            inBackground(work, 'Deleting notebook', () => resyncNotebooks(queryClient));
         },
     });
 }

@@ -9,16 +9,16 @@
     border: 1px solid var(--border);
 }
 
-/* Smooth transitions for all interactive elements */
-button,
-a,
-input,
-.clickable {
+/* Smooth transitions for interactive elements.
+   Components animated by `motion` (Rare UI delete button, drawers) are
+   excluded: a CSS `transition` on top of JS-driven transforms makes their
+   animations lag and stutter. */
+:is(button, a, input, .clickable):not([data-slot="delete-button"] *, [data-vaul-drawer] *) {
     transition: all 0.2s ease-out;
 }
 
 /* Premium button hover effects */
-button:hover:not(:disabled) {
+button:hover:not(:disabled):not([data-slot="delete-button"] *, [data-vaul-drawer] *) {
     transform: translateY(-1px);
 }
 
@@ -85,7 +85,8 @@ input::placeholder {
 }
 
 /* Animation classes */
-@keyframes fadeIn {
+/* Prefixed: vaul injects a global `@keyframes fadeIn` that would override this */
+@keyframes leo-fade-in {
     from {
         opacity: 0;
         transform: translateY(10px);
@@ -98,7 +99,7 @@ input::placeholder {
 }
 
 .animate-fade-in {
-    animation: fadeIn 0.3s ease-out forwards;
+    animation: leo-fade-in 0.3s ease-out forwards;
 }
 
 /* Loading spinner enhancement */

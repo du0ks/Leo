@@ -12,6 +12,8 @@ interface UIState {
     darkMode: boolean;
     themeColor: ThemeColor;
     settingsOpen: boolean;
+    /** Note whose title input is focused (sidebar keeps its order stable meanwhile). */
+    titleFocusedNoteId: string | null;
 
     // Breadcrumb navigation for nested notebooks
     currentNotebookPath: string[]; // Array of notebook IDs from root to current
@@ -29,6 +31,7 @@ interface UIState {
     setDarkMode: (dark: boolean) => void;
     setThemeColor: (color: ThemeColor) => void;
     setSettingsOpen: (open: boolean) => void;
+    setTitleFocusedNoteId: (id: string | null) => void;
     /** Clear per-user navigation state (on sign-out). Keeps theme preferences. */
     resetSession: () => void;
 }
@@ -54,7 +57,7 @@ const storage = {
         };
     },
     setItem: (name: string, value: any) => {
-        const { settingsOpen: _settingsOpen, ...persisted } = value.state;
+        const { settingsOpen: _settingsOpen, titleFocusedNoteId: _titleFocused, ...persisted } = value.state;
         const serializedState = {
             ...persisted,
             expandedNotebooks: Array.from(value.state.expandedNotebooks),
@@ -86,6 +89,7 @@ export const useUIStore = create<UIState>()(
             darkMode: true,
             themeColor: 'yellow',
             settingsOpen: false,
+            titleFocusedNoteId: null,
             currentNotebookPath: [],
 
             toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -133,6 +137,7 @@ export const useUIStore = create<UIState>()(
             setDarkMode: (dark) => set({ darkMode: dark }),
             setThemeColor: (color) => set({ themeColor: color }),
             setSettingsOpen: (open) => set({ settingsOpen: open }),
+            setTitleFocusedNoteId: (id) => set({ titleFocusedNoteId: id }),
             resetSession: () => set({
                 expandedNotebooks: new Set(),
                 selectedNoteId: null,

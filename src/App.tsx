@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, notifyManager } from '@tanstack/react-query';
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
 
@@ -14,6 +14,11 @@ import { SettingsModal } from './components/settings/SettingsModal';
 import { LogOut, Menu, Loader2, Settings } from 'lucide-react';
 import clsx from 'clsx';
 import { UpdatePrompt } from './components/ui/UpdatePrompt';
+
+// Deliver cache updates in a microtask instead of the default setTimeout(0), so
+// optimistic updates render in the same frame as the UI change that caused them
+// (e.g. a dropped row doesn't flash back into its old place for a frame).
+notifyManager.setScheduler((cb) => queueMicrotask(cb));
 
 const queryClient = new QueryClient({
   defaultOptions: {
