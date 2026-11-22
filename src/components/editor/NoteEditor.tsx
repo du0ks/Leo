@@ -23,43 +23,48 @@ const getDefaultContent = (): PartialBlock[] => [
 ];
 
 export function NoteEditor({ noteId, content, onChange, editable = true }: NoteEditorProps) {
-    const isInitialLoad = useRef(true);
-    const { darkMode } = useUIStore();
+    const darkMode = useUIStore((s) => s.darkMode);
 
-    // Safely parse initial content.
-    // We rely on the parent component changing the 'key' prop to re-initialize this component
-    // when the user switches notes. This prevents the "jumping cursor" issue because
-    // we don't sync 'content' prop changes into the editor via useEffect.
+    // Initial content is only read on mount. The parent changes the `key` prop
+    // to re-initialize the editor (note switch or newer remote version), which
+    // avoids cursor jumps from syncing props into a live editor.
     const initialContent = useMemo((): PartialBlock[] => {
         if (content && Array.isArray(content) && content.length > 0) {
             return content as PartialBlock[];
         }
         return getDefaultContent();
-    }, []); // Only compute on mount
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const editor = useCreateBlockNote({
         initialContent,
     });
 
-    // Handle content changes from editor
-    const handleChange = useCallback(() => {
-        // Skip the first change triggered by initialization
-        if (isInitialLoad.current) {
-            isInitialLoad.current = false;
-            return;
-        }
-        onChange(editor.document, noteId);
-    }, [editor, onChange, noteId]);
-
-    // Attach listener directly to editor to catch paste events
+    // BlockNote may emit normalization transactions right after mount. Saving
+    // those would bump the note (and could overwrite newer content from another
+    // device), so ignore changes until the document really differs from what
+    // was loaded. Only the first few events pay for the comparison.
+    const initialJsonRef = useRef<string | null>(null);
+    const hasUserChangesRef = useRef(false);
     useEffect(() => {
-        if (editor && typeof editor.onChange === 'function') {
-            const unsubscribe = editor.onChange(handleChange);
-            return () => {
-                unsubscribe();
-            };
-        }
-    }, [editor, handleChange]);
+        initialJsonRef.current = JSON.stringify(editor.document);
+    }, [editor]);
+
+    const onChangeRef = useRef(onChange);
+    onChangeRef.current = onChange;
+    const editableRef = useRef(editable);
+    editableRef.current = editable;
+
+    useEffect(() => {
+        return editor.onChange(() => {
+            if (!editableRef.current) return;
+            if (!hasUserChangesRef.current) {
+                if (JSON.stringify(editor.document) === initialJsonRef.current) return;
+                hasUserChangesRef.current = true;
+            }
+            onChangeRef.current(editor.document, noteId);
+        });
+    }, [editor, noteId]);
 
     // Intercept Backspace & Enter
     const handleKeyDownCapture = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -147,7 +152,6 @@ export function NoteEditor({ noteId, content, onChange, editable = true }: NoteE
             <BlockNoteView
                 editor={editor}
                 editable={editable}
-                onChange={handleChange}
                 theme={darkMode ? "dark" : "light"}
                 className="min-h-full"
             />

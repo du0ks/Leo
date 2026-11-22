@@ -1,121 +1,65 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyFunction = (...args: any[]) => any;
-
-type DebouncedFunction<T extends AnyFunction> = ((...args: Parameters<T>) => void) & {
-    flush: () => Promise<void>;
+export type DebouncedFunction<A extends unknown[]> = ((...args: A) => void) & {
+    /** Run the pending call (if any) immediately. Synchronous. */
+    flush: () => void;
+    /** Drop the pending call (if any). */
     cancel: () => void;
+    /** Whether a call is waiting for the debounce timer. */
     hasPending: () => boolean;
 };
 
-export function useDebouncedCallback<T extends AnyFunction>(
-    callback: T,
+/**
+ * Debounce a callback. The returned function and its helpers are stable for the
+ * component's lifetime (as long as `delay` does not change). Pending calls are
+ * flushed on unmount so buffered edits are never silently dropped.
+ */
+export function useDebouncedCallback<A extends unknown[]>(
+    callback: (...args: A) => void,
     delay: number
-): DebouncedFunction<T> {
+): DebouncedFunction<A> {
+    const callbackRef = useRef(callback);
     const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const callbackRef = useRef<T>(callback);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pendingArgsRef = useRef<any[] | null>(null);
-    // Track in-flight async operations
-    const inflightPromiseRef = useRef<Promise<void> | null>(null);
+    const pendingArgsRef = useRef<A | null>(null);
 
-    // Update ref when callback changes
-    useEffect(() => {
+    useLayoutEffect(() => {
         callbackRef.current = callback;
-    }, [callback]);
+    });
 
-    // Cleanup on unmount - flush pending changes instead of dropping them
-    useEffect(() => {
-        return () => {
-            if (timeoutRef.current && pendingArgsRef.current) {
-                clearTimeout(timeoutRef.current);
-                // Save pending changes on unmount
-                callbackRef.current(...pendingArgsRef.current);
-            }
-        };
-    }, []);
-
-    // Create stable flush and cancel functions using refs
-    const flushRef = useRef<() => Promise<void>>(async () => { });
-    const cancelRef = useRef<() => void>(() => { });
-    const hasPendingRef = useRef<() => boolean>(() => false);
-
-    // Update the flush/cancel functions on every render to capture current refs
-    flushRef.current = async () => {
-        // First, wait for any in-flight operation from a previous flush
-        if (inflightPromiseRef.current) {
-            await inflightPromiseRef.current;
-        }
-
-        if (timeoutRef.current && pendingArgsRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-            const args = pendingArgsRef.current;
-            pendingArgsRef.current = null;
-
-            // Execute and track the promise
-            const result = callbackRef.current(...args);
-            if (result && typeof result.then === 'function') {
-                inflightPromiseRef.current = result;
-                try {
-                    await result;
-                } finally {
-                    inflightPromiseRef.current = null;
-                }
-            }
-        }
-    };
-
-    cancelRef.current = () => {
+    const flush = useCallback(() => {
         if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
-            pendingArgsRef.current = null;
         }
-    };
+        const args = pendingArgsRef.current;
+        pendingArgsRef.current = null;
+        if (args) callbackRef.current(...args);
+    }, []);
 
-    hasPendingRef.current = () => {
-        return pendingArgsRef.current !== null || inflightPromiseRef.current !== null;
-    };
+    const cancel = useCallback(() => {
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+        }
+        pendingArgsRef.current = null;
+    }, []);
 
-    const debouncedCallback = useCallback(
-        (...args: Parameters<T>) => {
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-            }
+    const hasPending = useCallback(() => pendingArgsRef.current !== null, []);
 
-            // Store args for potential flush
+    const debounced = useCallback(
+        (...args: A) => {
             pendingArgsRef.current = args;
-
-            timeoutRef.current = setTimeout(() => {
-                const result = callbackRef.current(...args);
-                // Track if result is a promise
-                if (result && typeof result.then === 'function') {
-                    inflightPromiseRef.current = result;
-                    result.finally(() => {
-                        inflightPromiseRef.current = null;
-                    });
-                }
-                pendingArgsRef.current = null;
-                timeoutRef.current = null;
-            }, delay);
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            timeoutRef.current = setTimeout(flush, delay);
         },
-        [delay]
-    ) as DebouncedFunction<T>;
+        [delay, flush]
+    );
 
-    // Expose stable wrapper functions that delegate to current refs
-    debouncedCallback.flush = useCallback(async () => {
-        await flushRef.current();
-    }, []);
+    // Save pending changes on unmount instead of dropping them
+    useEffect(() => flush, [flush]);
 
-    debouncedCallback.cancel = useCallback(() => {
-        cancelRef.current();
-    }, []);
-
-    debouncedCallback.hasPending = useCallback(() => {
-        return hasPendingRef.current();
-    }, []);
-
-    return debouncedCallback;
+    return useMemo(
+        () => Object.assign(debounced, { flush, cancel, hasPending }),
+        [debounced, flush, cancel, hasPending]
+    );
 }

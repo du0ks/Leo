@@ -13,25 +13,31 @@ import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { SettingsModal } from './components/settings/SettingsModal';
 import { LogOut, Menu, Loader2, Settings } from 'lucide-react';
 import clsx from 'clsx';
+import { UpdatePrompt } from './components/ui/UpdatePrompt';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60,
       retry: 1,
+      // Firestore has its own offline cache; let it answer while offline
+      networkMode: 'always',
+    },
+    mutations: {
+      // Otherwise React Query pauses mutations offline and the writes never
+      // reach Firestore's offline queue (lost on reload).
+      networkMode: 'always',
     },
   },
 });
 
 function AppContent() {
   const { loading, signOut, isAuthenticated } = useAuth();
-  const {
-    darkMode,
-    themeColor,
-    sidebarOpen,
-    toggleSidebar,
-    setSettingsOpen
-  } = useUIStore();
+  const darkMode = useUIStore((s) => s.darkMode);
+  const themeColor = useUIStore((s) => s.themeColor);
+  const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  const toggleSidebar = useUIStore((s) => s.toggleSidebar);
+  const setSettingsOpen = useUIStore((s) => s.setSettingsOpen);
 
   // Trigger background settings sync (never blocks - uses cached Zustand values)
   useUserSettings();
@@ -39,11 +45,8 @@ function AppContent() {
   // Apply theme classes and attributes
   useEffect(() => {
     const root = document.documentElement;
-    if (darkMode) {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
+    root.classList.toggle('dark', darkMode);
+    root.style.colorScheme = darkMode ? 'dark' : 'light';
     root.setAttribute('data-theme', themeColor);
   }, [darkMode, themeColor]);
 
@@ -132,8 +135,6 @@ function AppContent() {
     </div>
   );
 }
-
-import { UpdatePrompt } from './components/ui/UpdatePrompt';
 
 export default function App() {
   return (

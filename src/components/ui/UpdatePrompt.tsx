@@ -1,10 +1,8 @@
 import { useRegisterSW } from 'virtual:pwa-register/react';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { RefreshCw, X } from 'lucide-react';
 
 export function UpdatePrompt() {
-    const reloadingRef = useRef(false);
-
     const {
         needRefresh: [needRefresh, setNeedRefresh],
         updateServiceWorker,
@@ -14,21 +12,8 @@ export function UpdatePrompt() {
         },
     });
 
-    // Listen for controllerchange — fires when the new SW takes control.
-    // This is Google's recommended pattern: reload ONLY after the new SW
-    // is confirmed to be in control, guaranteeing fresh assets.
-    useEffect(() => {
-        const handleControllerChange = () => {
-            if (reloadingRef.current) return; // prevent double-reload
-            reloadingRef.current = true;
-            window.location.reload();
-        };
-
-        navigator.serviceWorker?.addEventListener('controllerchange', handleControllerChange);
-        return () => {
-            navigator.serviceWorker?.removeEventListener('controllerchange', handleControllerChange);
-        };
-    }, []);
+    // The reload after the new SW takes control is handled globally by the
+    // `controllerchange` listener in main.tsx.
 
     // Check for SW updates when user returns to the tab (visibility change).
     // Zero bandwidth while idle, checks only when user actually comes back.
@@ -52,7 +37,7 @@ export function UpdatePrompt() {
 
     const handleUpdate = () => {
         // Pass false to NOT auto-reload — we handle reload ourselves
-        // via the controllerchange listener above, which is more reliable.
+        // via the global controllerchange listener in main.tsx.
         updateServiceWorker(false);
     };
 

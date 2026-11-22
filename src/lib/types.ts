@@ -20,10 +20,11 @@ export interface Note {
     id: string;
     notebook_id: string;
     title: string;
-    content: unknown; // BlockNote JSON
+    content: unknown; // BlockNote JSON (undefined in list views)
     created_at: string;
     updated_at: string;
     deleted_at: string | null; // Soft delete timestamp
+    has_pending_writes?: boolean; // Local edits not yet acknowledged by the server
 }
 
 export interface NewNotebook {

@@ -29,14 +29,22 @@ interface UIState {
     setDarkMode: (dark: boolean) => void;
     setThemeColor: (color: ThemeColor) => void;
     setSettingsOpen: (open: boolean) => void;
+    /** Clear per-user navigation state (on sign-out). Keeps theme preferences. */
+    resetSession: () => void;
 }
 
 // Custom storage wrapper to handle Set serialization
 const storage = {
     getItem: (name: string) => {
-        const str = localStorage.getItem(name);
-        if (!str) return null;
-        const { state } = JSON.parse(str);
+        let state;
+        try {
+            const str = localStorage.getItem(name);
+            if (!str) return null;
+            state = JSON.parse(str).state;
+            if (!state || typeof state !== 'object') return null;
+        } catch {
+            return null; // Corrupt or inaccessible storage: fall back to defaults
+        }
         return {
             state: {
                 ...state,
@@ -46,14 +54,25 @@ const storage = {
         };
     },
     setItem: (name: string, value: any) => {
+        const { settingsOpen: _settingsOpen, ...persisted } = value.state;
         const serializedState = {
-            ...value.state,
+            ...persisted,
             expandedNotebooks: Array.from(value.state.expandedNotebooks),
             currentNotebookPath: value.state.currentNotebookPath || [],
         };
-        localStorage.setItem(name, JSON.stringify({ state: serializedState }));
+        try {
+            localStorage.setItem(name, JSON.stringify({ state: serializedState }));
+        } catch {
+            // Storage full or blocked (private mode) — UI state just won't persist
+        }
     },
-    removeItem: (name: string) => localStorage.removeItem(name),
+    removeItem: (name: string) => {
+        try {
+            localStorage.removeItem(name);
+        } catch {
+            // ignore
+        }
+    },
 };
 
 export const useUIStore = create<UIState>()(
@@ -114,6 +133,14 @@ export const useUIStore = create<UIState>()(
             setDarkMode: (dark) => set({ darkMode: dark }),
             setThemeColor: (color) => set({ themeColor: color }),
             setSettingsOpen: (open) => set({ settingsOpen: open }),
+            resetSession: () => set({
+                expandedNotebooks: new Set(),
+                selectedNoteId: null,
+                selectedNotebookId: null,
+                isTrashView: false,
+                settingsOpen: false,
+                currentNotebookPath: [],
+            }),
         }),
         {
             name: 'leo-ui-storage',

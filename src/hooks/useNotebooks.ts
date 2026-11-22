@@ -1,127 +1,161 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import * as React from 'react';
+import { useEffect, useMemo } from 'react';
 import {
     collection,
-    query,
     getDocs,
     doc,
     addDoc,
     updateDoc,
-    deleteDoc,
     serverTimestamp,
-    Timestamp,
     onSnapshot,
-    where
+    type DocumentData,
+    type QueryDocumentSnapshot,
+    type QuerySnapshot,
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
+import { commitInChunks, firstSnapshot, toIso } from '../lib/firestoreUtils';
 import type { Notebook, NewNotebook } from '../lib/types';
 
-// Security: Input validation constants
+// Security: Input validation constants (mirrored in firestore.rules)
 const MAX_TITLE_LENGTH = 200;
 
 // Strip HTML tags and enforce length limits
-const sanitizeTitle = (title: string): string => {
+export const sanitizeTitle = (title: string): string => {
     const stripped = title.replace(/<[^>]*>/g, '').trim();
     return stripped.slice(0, MAX_TITLE_LENGTH);
 };
 
-// Helper to get user's notebooks collection
-const getNotebooksRef = () => {
+const requireUid = () => {
     const userId = auth.currentUser?.uid;
     if (!userId) throw new Error('Not authenticated');
-    return collection(db, 'users', userId, 'notebooks');
+    return userId;
 };
 
-// Parse notebook from Firestore document
-const parseNotebook = (docSnap: any, userId: string): Notebook => {
+const getNotebooksRef = () => collection(db, 'users', requireUid(), 'notebooks');
+const getNotesRefFor = (notebookId: string) =>
+    collection(db, 'users', requireUid(), 'notebooks', notebookId, 'notes');
+
+const parseNotebook = (docSnap: QueryDocumentSnapshot<DocumentData>, userId: string): Notebook => {
     const data = docSnap.data({ serverTimestamps: 'estimate' });
     return {
         id: docSnap.id,
         user_id: userId,
-        title: data.title,
+        title: data.title ?? '',
         parent_notebook_id: data.parentNotebookId || null,
-        created_at: (data.createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-        updated_at: (data.updatedAt as Timestamp)?.toDate().toISOString() || new Date().toISOString(),
-        deleted_at: data.deletedAt ? (data.deletedAt as Timestamp).toDate().toISOString() : null,
+        created_at: toIso(data.createdAt)!,
+        updated_at: toIso(data.updatedAt)!,
+        deleted_at: toIso(data.deletedAt, null),
     };
 };
 
-// Fetch all active notebooks with real-time sync
-export function useNotebooks() {
+const parseAll = (snapshot: QuerySnapshot<DocumentData>, userId: string) =>
+    snapshot.docs.map((d) => parseNotebook(d, userId));
+
+const notebooksKey = (userId: string | undefined) => ['notebooks', userId ?? 'anon'];
+
+/**
+ * All notebooks (active + trashed) for the current user, kept live by a single
+ * snapshot listener. Active and trashed views are derived from this list, so
+ * the trash no longer needs its own query or manual invalidation.
+ */
+function useAllNotebooks() {
     const queryClient = useQueryClient();
     const userId = auth.currentUser?.uid;
+    const key = notebooksKey(userId);
 
-    const { data, ...queryResult } = useQuery({
-        queryKey: ['notebooks'],
-        queryFn: async (): Promise<Notebook[]> => {
-            const q = query(getNotebooksRef());
-            const snapshot = await getDocs(q);
-
-            return snapshot.docs
-                .map(docSnap => parseNotebook(docSnap, auth.currentUser?.uid || ''))
-                .filter(nb => nb.deleted_at === null)
-                .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
-        },
+    const query = useQuery({
+        queryKey: key,
+        queryFn: () =>
+            firstSnapshot<Notebook[]>((next, error) =>
+                onSnapshot(getNotebooksRef(), (s) => next(parseAll(s, userId!)), error)
+            ),
         enabled: !!userId,
-        staleTime: Infinity
+        staleTime: Infinity,
     });
 
-    React.useEffect(() => {
+    useEffect(() => {
         if (!userId) return;
-
-        const q = query(getNotebooksRef());
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const notebooks = snapshot.docs
-                .map(docSnap => parseNotebook(docSnap, userId))
-                .filter(nb => nb.deleted_at === null)
-                .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
-
-            queryClient.setQueryData(['notebooks'], notebooks);
-        }, (error) => {
-            console.error("Error in notebooks snapshot listener:", error);
-        });
-
-        return () => unsubscribe();
+        return onSnapshot(
+            getNotebooksRef(),
+            (snapshot) => queryClient.setQueryData(notebooksKey(userId), parseAll(snapshot, userId)),
+            (error) => console.error('Error in notebooks snapshot listener:', error)
+        );
     }, [userId, queryClient]);
 
-    return { data, ...queryResult };
+    return query;
 }
 
-// Fetch trashed notebooks
+// Active notebooks, sorted by title
+export function useNotebooks() {
+    const { data, ...rest } = useAllNotebooks();
+    const active = useMemo(
+        () =>
+            data
+                ?.filter((nb) => nb.deleted_at === null)
+                .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })),
+        [data]
+    );
+    return { data: active, ...rest };
+}
+
+// Trashed notebooks, most recently deleted first
 export function useTrashedNotebooks() {
-    return useQuery({
-        queryKey: ['notebooks', 'trashed'],
-        queryFn: async (): Promise<Notebook[]> => {
-            const q = query(getNotebooksRef(), where('deletedAt', '!=', null));
-            const snapshot = await getDocs(q);
-
-            return snapshot.docs
-                .map(docSnap => parseNotebook(docSnap, auth.currentUser?.uid || ''))
-                .sort((a, b) => new Date(b.deleted_at!).getTime() - new Date(a.deleted_at!).getTime());
-        },
-        enabled: !!auth.currentUser,
-    });
+    const { data, ...rest } = useAllNotebooks();
+    const trashed = useMemo(
+        () =>
+            data
+                ?.filter((nb) => nb.deleted_at !== null)
+                .sort((a, b) => new Date(b.deleted_at!).getTime() - new Date(a.deleted_at!).getTime()),
+        [data]
+    );
+    return { data: trashed, ...rest };
 }
 
-// Helper: Get all descendant notebook IDs (for cascading operations)
-async function getDescendantNotebookIds(notebookId: string, allNotebooks: Notebook[]): Promise<string[]> {
-    const descendants: string[] = [];
-    const directChildren = allNotebooks.filter(nb => nb.parent_notebook_id === notebookId);
-
-    for (const child of directChildren) {
-        descendants.push(child.id);
-        const childDescendants = await getDescendantNotebookIds(child.id, allNotebooks);
-        descendants.push(...childDescendants);
+// Get all descendant notebook IDs (guards against cycles in corrupted data)
+function getDescendantNotebookIds(notebookId: string, allNotebooks: Notebook[]): string[] {
+    const byParent = new Map<string, string[]>();
+    for (const nb of allNotebooks) {
+        if (!nb.parent_notebook_id) continue;
+        const list = byParent.get(nb.parent_notebook_id) ?? [];
+        list.push(nb.id);
+        byParent.set(nb.parent_notebook_id, list);
     }
 
-    return descendants;
+    const result: string[] = [];
+    const visited = new Set<string>([notebookId]);
+    const stack = [...(byParent.get(notebookId) ?? [])];
+    while (stack.length) {
+        const id = stack.pop()!;
+        if (visited.has(id)) continue;
+        visited.add(id);
+        result.push(id);
+        stack.push(...(byParent.get(id) ?? []));
+    }
+    return result;
+}
+
+/** Notebook + all of its descendants, using the cached list when available. */
+async function getNotebookSubtree(id: string, queryClient: ReturnType<typeof useQueryClient>) {
+    const userId = requireUid();
+    let all = queryClient.getQueryData<Notebook[]>(notebooksKey(userId));
+    if (!all) {
+        const snapshot = await getDocs(getNotebooksRef());
+        all = parseAll(snapshot, userId);
+    }
+    return [id, ...getDescendantNotebookIds(id, all)];
+}
+
+/** Fetch the notes of several notebooks in parallel. */
+async function getNotesOf(notebookIds: string[]) {
+    const snapshots = await Promise.all(notebookIds.map((nbId) => getDocs(getNotesRefFor(nbId))));
+    return snapshots.flatMap((s) => s.docs);
 }
 
 // Create notebook (supports sub-notebooks)
 export function useCreateNotebook() {
     return useMutation({
         mutationFn: async (notebook: NewNotebook): Promise<Notebook> => {
-            const safeTitle = sanitizeTitle(notebook.title || 'Untitled');
+            const safeTitle = sanitizeTitle(notebook.title || 'Untitled') || 'Untitled';
             const docRef = await addDoc(getNotebooksRef(), {
                 title: safeTitle,
                 parentNotebookId: notebook.parent_notebook_id || null,
@@ -130,169 +164,118 @@ export function useCreateNotebook() {
                 deletedAt: null,
             });
 
+            const now = new Date().toISOString();
             return {
                 id: docRef.id,
-                user_id: auth.currentUser!.uid,
+                user_id: requireUid(),
                 title: safeTitle,
                 parent_notebook_id: notebook.parent_notebook_id || null,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
+                created_at: now,
+                updated_at: now,
                 deleted_at: null,
             };
-        },
-        onSuccess: () => {
-            // Real-time snapshot updates the list automatically
         },
     });
 }
 
-// Update notebook (title or parent)
+// Update notebook title
 export function useUpdateNotebook() {
     return useMutation({
-        mutationFn: async ({ id, title, parent_notebook_id }: {
-            id: string;
-            title?: string;
-            parent_notebook_id?: string | null;
-        }) => {
-            const docRef = doc(getNotebooksRef(), id);
-            const updates: any = { updatedAt: serverTimestamp() };
-
-            if (title !== undefined) updates.title = sanitizeTitle(title);
-            if (parent_notebook_id !== undefined) updates.parentNotebookId = parent_notebook_id;
-
-            await updateDoc(docRef, updates);
-        },
-        onSuccess: () => {
-            // Real-time snapshot updates the list automatically
+        mutationFn: async ({ id, title }: { id: string; title: string }) => {
+            const safeTitle = sanitizeTitle(title);
+            if (!safeTitle) return;
+            await updateDoc(doc(getNotebooksRef(), id), {
+                title: safeTitle,
+                updatedAt: serverTimestamp(),
+            });
         },
     });
 }
 
 // Move notebook to different parent (or to root)
 export function useMoveNotebook() {
+    const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, newParentId }: { id: string; newParentId: string | null }) => {
-            const docRef = doc(getNotebooksRef(), id);
-            await updateDoc(docRef, {
+            if (newParentId) {
+                // Never allow a notebook to become its own ancestor
+                const subtree = await getNotebookSubtree(id, queryClient);
+                if (subtree.includes(newParentId)) {
+                    throw new Error('Cannot move a notebook into itself or one of its sub-notebooks.');
+                }
+            }
+            await updateDoc(doc(getNotebooksRef(), id), {
                 parentNotebookId: newParentId,
                 updatedAt: serverTimestamp(),
             });
         },
-        onSuccess: () => {
-            // Real-time snapshot updates the list automatically
-        },
     });
 }
 
-// Soft delete notebook (cascades to children and notes)
+// Soft delete notebook (cascades to children and notes) — batched writes
 export function useSoftDeleteNotebook() {
     const queryClient = useQueryClient();
 
     return useMutation({
         mutationFn: async (id: string) => {
-            const userId = auth.currentUser!.uid;
-
-            // Get all notebooks to find descendants
-            const allNotebooksSnapshot = await getDocs(getNotebooksRef());
-            const allNotebooks = allNotebooksSnapshot.docs
-                .map(docSnap => parseNotebook(docSnap, userId));
-
-            // Get all descendant notebook IDs
-            const descendantIds = await getDescendantNotebookIds(id, allNotebooks);
-            const allNotebookIds = [id, ...descendantIds];
-
-            // Soft delete all notebooks
-            for (const nbId of allNotebookIds) {
-                const docRef = doc(getNotebooksRef(), nbId);
-                await updateDoc(docRef, { deletedAt: serverTimestamp() });
-
-                // Soft delete all notes in this notebook
-                const notesRef = collection(db, 'users', userId, 'notebooks', nbId, 'notes');
-                const notesSnapshot = await getDocs(notesRef);
-                const deletePromises = notesSnapshot.docs.map(noteDoc =>
-                    updateDoc(doc(notesRef, noteDoc.id), { deletedAt: serverTimestamp() })
-                );
-                await Promise.all(deletePromises);
-            }
+            const ids = await getNotebookSubtree(id, queryClient);
+            const notes = await getNotesOf(ids);
+            const deletedAt = serverTimestamp();
+            await commitInChunks([
+                ...ids.map((nbId) => ({
+                    type: 'update' as const,
+                    ref: doc(getNotebooksRef(), nbId),
+                    data: { deletedAt },
+                })),
+                ...notes
+                    .filter((n) => !n.data().deletedAt)
+                    .map((n) => ({ type: 'update' as const, ref: n.ref, data: { deletedAt } })),
+            ]);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notebooks', 'trashed'] });
             queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
 }
 
-// Restore notebook (cascades to children and notes)
+// Restore notebook (cascades to children and notes) — batched writes
 export function useRestoreNotebook() {
     const queryClient = useQueryClient();
 
     return useMutation({
         mutationFn: async (id: string) => {
-            const userId = auth.currentUser!.uid;
-
-            // Get all notebooks to find descendants
-            const allNotebooksSnapshot = await getDocs(getNotebooksRef());
-            const allNotebooks = allNotebooksSnapshot.docs
-                .map(docSnap => parseNotebook(docSnap, userId));
-
-            // Get all descendant notebook IDs
-            const descendantIds = await getDescendantNotebookIds(id, allNotebooks);
-            const allNotebookIds = [id, ...descendantIds];
-
-            // Restore all notebooks
-            for (const nbId of allNotebookIds) {
-                const docRef = doc(getNotebooksRef(), nbId);
-                await updateDoc(docRef, { deletedAt: null });
-
-                // Restore all notes
-                const notesRef = collection(db, 'users', userId, 'notebooks', nbId, 'notes');
-                const notesSnapshot = await getDocs(notesRef);
-                const restorePromises = notesSnapshot.docs.map(noteDoc =>
-                    updateDoc(doc(notesRef, noteDoc.id), { deletedAt: null })
-                );
-                await Promise.all(restorePromises);
-            }
+            const ids = await getNotebookSubtree(id, queryClient);
+            const notes = await getNotesOf(ids);
+            await commitInChunks([
+                ...ids.map((nbId) => ({
+                    type: 'update' as const,
+                    ref: doc(getNotebooksRef(), nbId),
+                    data: { deletedAt: null },
+                })),
+                ...notes.map((n) => ({ type: 'update' as const, ref: n.ref, data: { deletedAt: null } })),
+            ]);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notebooks', 'trashed'] });
             queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
 }
 
-// Permanently delete notebook (cascades)
+// Permanently delete notebook (cascades) — batched deletes
 export function usePermanentlyDeleteNotebook() {
     const queryClient = useQueryClient();
 
     return useMutation({
         mutationFn: async (id: string) => {
-            const userId = auth.currentUser!.uid;
-
-            // Get all notebooks to find descendants
-            const allNotebooksSnapshot = await getDocs(getNotebooksRef());
-            const allNotebooks = allNotebooksSnapshot.docs
-                .map(docSnap => parseNotebook(docSnap, userId));
-
-            // Get all descendant notebook IDs
-            const descendantIds = await getDescendantNotebookIds(id, allNotebooks);
-            const allNotebookIds = [id, ...descendantIds];
-
-            // Delete all notebooks (start from deepest children)
-            for (const nbId of [...allNotebookIds].reverse()) {
-                // Delete all notes first
-                const notesRef = collection(db, 'users', userId, 'notebooks', nbId, 'notes');
-                const notesSnapshot = await getDocs(notesRef);
-                const deletePromises = notesSnapshot.docs.map(noteDoc =>
-                    deleteDoc(doc(notesRef, noteDoc.id))
-                );
-                await Promise.all(deletePromises);
-
-                // Then delete the notebook
-                await deleteDoc(doc(getNotebooksRef(), nbId));
-            }
+            const ids = await getNotebookSubtree(id, queryClient);
+            const notes = await getNotesOf(ids);
+            await commitInChunks([
+                ...notes.map((n) => ({ type: 'delete' as const, ref: n.ref })),
+                ...ids.map((nbId) => ({ type: 'delete' as const, ref: doc(getNotebooksRef(), nbId) })),
+            ]);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notebooks', 'trashed'] });
+            queryClient.invalidateQueries({ queryKey: ['notes', 'trashed'] });
         },
     });
 }
