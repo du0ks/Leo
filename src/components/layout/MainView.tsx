@@ -214,7 +214,7 @@ export function MainView() {
 
     if (!selectedNoteId) {
         return (
-            <div className="flex-1 min-w-0 flex items-center justify-center bg-app-bg">
+            <div className="fx-paper flex-1 min-w-0 flex items-center justify-center bg-app-bg">
                 <div className="text-center animate-fade-in group">
                     <div className="w-24 h-24 mx-auto mb-6 transition-transform duration-500 group-hover:scale-110">
                         <img src="/leo.png" alt="Leo" className="w-full h-full object-contain opacity-20 group-hover:opacity-40 transition-opacity" />
@@ -229,7 +229,7 @@ export function MainView() {
 
     if (isLoading && !note) {
         return (
-            <div className="flex-1 min-w-0 flex items-center justify-center bg-app-bg">
+            <div className="fx-paper flex-1 min-w-0 flex items-center justify-center bg-app-bg">
                 <Loader2 className="w-8 h-8 animate-spin text-app-primary" />
             </div>
         );
@@ -237,7 +237,7 @@ export function MainView() {
 
     if (!note) {
         return (
-            <div className="flex-1 min-w-0 flex items-center justify-center bg-app-bg">
+            <div className="fx-paper flex-1 min-w-0 flex items-center justify-center bg-app-bg">
                 <p className="text-app-muted">Note not found</p>
             </div>
         );
@@ -247,23 +247,26 @@ export function MainView() {
     const isSyncing = inflightWrites > 0 || hasBufferedEdits;
 
     return (
-        <div className="flex-1 min-w-0 flex flex-col bg-app-bg overflow-hidden">
+        <div className="fx-paper flex-1 min-w-0 flex flex-col bg-app-bg overflow-hidden">
             {/* Title Bar */}
             <div className="flex items-center gap-3 px-8 py-6 border-b border-app-border bg-app-surface/20">
-                <input
-                    type="text"
-                    value={title}
-                    onChange={handleTitleChange}
-                    placeholder="Untitled Note"
-                    maxLength={200}
-                    readOnly={isTrashed}
-                    onFocus={() => useUIStore.getState().setTitleFocusedNoteId(note.id)}
-                    onBlur={() => useUIStore.getState().setTitleFocusedNoteId(null)}
-                    className={clsx(
-                        "flex-1 min-w-0 text-3xl font-bold bg-transparent text-app-text placeholder-app-muted focus:outline-none transition-opacity",
-                        isTrashed && "opacity-50"
-                    )}
-                />
+                {/* Wrapper carries the edge light (inputs can't have pseudo-elements) */}
+                <div className="fx-edge flex-1 min-w-0 rounded-lg">
+                    <input
+                        type="text"
+                        value={title}
+                        onChange={handleTitleChange}
+                        placeholder="Untitled Note"
+                        maxLength={200}
+                        readOnly={isTrashed}
+                        onFocus={() => useUIStore.getState().setTitleFocusedNoteId(note.id)}
+                        onBlur={() => useUIStore.getState().setTitleFocusedNoteId(null)}
+                        className={clsx(
+                            "w-full text-3xl font-bold bg-transparent text-app-text placeholder-app-muted focus:outline-none transition-opacity",
+                            isTrashed && "opacity-50"
+                        )}
+                    />
+                </div>
 
                 {isTrashed ? (
                     <div className="flex items-center gap-2">

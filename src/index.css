@@ -599,6 +599,13 @@ button:focus-visible {
   display: none;
 }
 
+/* Edge-light color, resolved once on <html> (which carries the theme). BlockNote
+   puts a `.dark` class on its own containers, which re-applies `.dark`'s default
+   (blue) --primary there; an inherited, already-resolved value avoids that. */
+:root {
+  --fx-edge-color: color-mix(in srgb, var(--primary) 85%, transparent);
+}
+
 /* ---------------------------------------------------------------------------
    Hover effects (desktop only) — see src/lib/hoverEffects.ts
    --grain-opacity (0 = off) and data-edge-light come from user settings.
@@ -646,7 +653,7 @@ button:focus-visible {
     padding: 1px;
     pointer-events: none;
     background: radial-gradient(200px circle at var(--mx, -9999px) var(--my, -9999px),
-        color-mix(in srgb, var(--primary) 85%, transparent), transparent 65%);
+        var(--fx-edge-color), transparent 65%);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
@@ -662,5 +669,62 @@ button:focus-visible {
   .fx-surface::before,
   .fx-edge::after {
     transition: none;
+  }
+}
+
+/* Paper texture: a permanent, very subtle grain on the note area (all devices).
+   Same viewport-pinned texture as the hover grain, so they line up. */
+.fx-paper {
+  position: relative;
+  isolation: isolate;
+}
+.fx-paper::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--noise-dark);
+  background-size: 180px 180px;
+  background-attachment: fixed;
+  /* the slider value is scaled down: paper must stay well below the hover grain */
+  opacity: calc(var(--paper-grain, 0.4) * 0.5);
+}
+.dark .fx-paper::before {
+  background-image: var(--noise-light);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  /* Edge light on editor content (code blocks, images). The ring is drawn by
+     an overlay outside the editor (see hoverEffects.ts) — writing styles into
+     ProseMirror-managed DOM could disturb the editor. */
+  .fx-edge-overlay {
+    position: fixed;
+    z-index: 15;
+    pointer-events: none;
+  }
+  .fx-edge-overlay::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    padding: 1px;
+    border-radius: inherit;
+    background: radial-gradient(200px circle at var(--mx, -9999px) var(--my, -9999px),
+        var(--fx-edge-color), transparent 65%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+
+  /* Edge light on the editor's formatting toolbar and "/" menu. These scroll
+     internally, so instead of a pseudo-element the light is painted into
+     their own border (gradient-border technique). */
+  :root[data-edge-light="on"] .bn-mantine .bn-toolbar,
+  :root[data-edge-light="on"] .bn-mantine .bn-suggestion-menu {
+    border-color: transparent;
+    background:
+      linear-gradient(var(--bn-colors-menu-background), var(--bn-colors-menu-background)) padding-box,
+      radial-gradient(160px circle at var(--mx, -9999px) var(--my, -9999px),
+        var(--fx-edge-color), var(--bn-colors-border) 70%) border-box;
   }
 }

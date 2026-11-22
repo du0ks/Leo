@@ -45,6 +45,7 @@ function AppContent() {
   const sidebarWidth = useUIStore((s) => s.sidebarWidth);
   const edgeLight = useUIStore((s) => s.edgeLight);
   const hoverGrain = useUIStore((s) => s.hoverGrain);
+  const paperGrain = useUIStore((s) => s.paperGrain);
   const layoutRef = useRef<HTMLDivElement>(null);
   const [resizing, setResizing] = useState(false);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
@@ -66,7 +67,8 @@ function AppContent() {
     const root = document.documentElement;
     root.dataset.edgeLight = edgeLight ? 'on' : 'off';
     root.style.setProperty('--grain-opacity', String(hoverGrain));
-  }, [edgeLight, hoverGrain]);
+    root.style.setProperty('--paper-grain', String(paperGrain));
+  }, [edgeLight, hoverGrain, paperGrain]);
 
   // Only show initial auth loading spinner
   if (loading) {
@@ -91,7 +93,7 @@ function AppContent() {
         <div className="flex items-center gap-3">
           <button
             onClick={toggleSidebar}
-            className="app-header-vibrant-button fx-surface fx-edge"
+            className="app-header-vibrant-button fx-surface"
             title="Toggle Sidebar"
           >
             <Menu className="w-5 h-5" />
@@ -106,14 +108,14 @@ function AppContent() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setSettingsOpen(true)}
-            className="app-header-vibrant-button group fx-surface fx-edge"
+            className="app-header-vibrant-button group fx-surface"
             title="Settings"
           >
             <Settings className="w-5 h-5 transition-transform group-hover:rotate-45" />
           </button>
           <button
             onClick={signOut}
-            className="app-header-vibrant-button hover:!bg-red-500/20 fx-surface fx-edge"
+            className="app-header-vibrant-button hover:!bg-red-500/20 fx-surface"
             title="Sign out"
           >
             <LogOut className="w-5 h-5" />

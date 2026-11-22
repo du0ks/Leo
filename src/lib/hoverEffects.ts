@@ -5,7 +5,9 @@
  *   strongest under the cursor. The texture is pinned to the viewport
  *   (`background-attachment: fixed`), so it continues seamlessly from one
  *   element to the next.
- * - `.fx-edge` — a thin light along the element's border near the cursor.
+ * - `.fx-edge` (and some editor parts, see EDGE_SELECTOR) — a thin light along
+ *   the element's border near the cursor.
+ * - `.fx-paper` — a permanent, very subtle grain (uses the same textures).
  *
  * This module generates the grain textures once and keeps `--mx`/`--my`
  * (cursor position relative to the element) up to date — only on the hovered
@@ -14,6 +16,22 @@
  */
 
 const TILE = 180;
+
+/**
+ * Elements that get edge light by having --mx/--my set on them directly: our
+ * own `.fx-edge` plus the editor's toolbar and "/" menu (React-rendered, not
+ * part of the editable document, so styling them is safe).
+ */
+const EDGE_SELECTOR = ['.fx-edge', '.bn-mantine .bn-toolbar', '.bn-mantine .bn-suggestion-menu'].join(',');
+
+/**
+ * Blocks inside the editable document (managed by ProseMirror). We never write
+ * to their DOM; a fixed overlay is placed over them instead.
+ */
+const EDITOR_EDGE_SELECTOR = [
+    '.bn-block-content[data-content-type="codeBlock"]',
+    '.bn-visual-media-wrapper',
+].join(',');
 const EDGE_REACH = 220; // px around the cursor in which edges are updated
 
 function makeTextures() {
@@ -39,16 +57,30 @@ function makeTextures() {
 }
 
 export function installHoverEffects(): void {
+    // Textures are also used by the (non-hover) paper texture, so always make them
+    makeTextures();
+
     // Hover effects only make sense with a real pointer
     if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
-
-    makeTextures();
 
     let x = -1e5;
     let y = -1e5;
     let target: Element | null = null;
     let raf = 0;
     const near = new Set<HTMLElement>();
+
+    // Pool of overlay rings for editor blocks
+    const overlays: HTMLDivElement[] = [];
+    const getOverlay = (i: number) => {
+        if (!overlays[i]) {
+            const div = document.createElement('div');
+            div.className = 'fx-edge-overlay';
+            div.setAttribute('aria-hidden', 'true');
+            document.body.appendChild(div);
+            overlays[i] = div;
+        }
+        return overlays[i];
+    };
 
     const setPos = (el: HTMLElement, r: DOMRect) => {
         el.style.setProperty('--mx', `${x - r.left}px`);
@@ -63,12 +95,36 @@ export function installHoverEffects(): void {
         if (surface) setPos(surface, surface.getBoundingClientRect());
 
         // Edge light: every edge element within reach of the cursor
-        if (document.documentElement.dataset.edgeLight !== 'on') return;
-        for (const el of document.querySelectorAll<HTMLElement>('.fx-edge')) {
+        let used = 0;
+        const hideUnused = () => {
+            for (let i = used; i < overlays.length; i++) overlays[i].style.display = 'none';
+        };
+        if (document.documentElement.dataset.edgeLight !== 'on') return hideUnused();
+
+        const isNear = (r: DOMRect) =>
+            Math.max(r.left - x, 0, x - r.right) < EDGE_REACH && Math.max(r.top - y, 0, y - r.bottom) < EDGE_REACH;
+
+        for (const block of document.querySelectorAll<HTMLElement>(EDITOR_EDGE_SELECTOR)) {
+            const r = block.getBoundingClientRect();
+            if (!isNear(r) || r.width === 0) continue;
+            const o = getOverlay(used++);
+            // Clip to the visible part of the editor's scroll area
+            const scroller = block.closest<HTMLElement>('.overflow-auto') ?? document.documentElement;
+            const c = scroller.getBoundingClientRect();
+            o.style.display = 'block';
+            o.style.left = `${r.left}px`;
+            o.style.top = `${r.top}px`;
+            o.style.width = `${r.width}px`;
+            o.style.height = `${r.height}px`;
+            o.style.borderRadius = getComputedStyle(block).borderRadius;
+            o.style.clipPath = `inset(${Math.max(0, c.top - r.top)}px ${Math.max(0, r.right - c.right)}px ${Math.max(0, r.bottom - c.bottom)}px ${Math.max(0, c.left - r.left)}px)`;
+            setPos(o, r);
+        }
+        hideUnused();
+
+        for (const el of document.querySelectorAll<HTMLElement>(EDGE_SELECTOR)) {
             const r = el.getBoundingClientRect();
-            const dx = Math.max(r.left - x, 0, x - r.right);
-            const dy = Math.max(r.top - y, 0, y - r.bottom);
-            if (dx < EDGE_REACH && dy < EDGE_REACH) {
+            if (isNear(r)) {
                 setPos(el, r);
                 near.add(el);
             } else if (near.has(el)) {
